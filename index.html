@@ -1,0 +1,1618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Stick Animator</title>
+<style>
+  /* ---- COLORS: change these to restyle the whole app ---- */
+  :root{
+    --bg:#e9ebef; --panel:#f6f7f9; --ink:#20242c; --mute:#6a7282; --line:#cfd3db; --accent:#2f6df6; --stage:#cdd1d9;
+    box-sizing:border-box;
+    padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){--bg:#23262d;--panel:#2b2f37;--ink:#dfe3ea;--mute:#8f98a8;--line:#3a3f4a;--accent:#5b8cff;--stage:#17191e}
+  }
+  :root[data-theme="dark"]{--bg:#23262d;--panel:#2b2f37;--ink:#dfe3ea;--mute:#8f98a8;--line:#3a3f4a;--accent:#5b8cff;--stage:#17191e}
+
+  html,body{height:100%;margin:0;background:var(--bg);color:var(--ink);font:13px/1.3 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden}
+  #app{display:flex;height:100%}
+  #tools{width:54px;flex:none;background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:2px;padding:6px 4px;overflow-y:auto}
+  #main{flex:1;min-width:0;display:flex;flex-direction:column}
+  #opts,#tl{background:var(--panel);display:flex;gap:10px;padding:6px 8px}
+  #opts{border-bottom:1px solid var(--line);align-items:center;overflow-x:auto;white-space:nowrap}
+  #tl{border-top:1px solid var(--line);flex-direction:column;gap:6px}
+  .row,.grp{display:flex;gap:6px;align-items:center}
+  .grp{padding-right:10px;border-right:1px solid var(--line)}
+  .grp:last-child{border:0}
+  .brand{font-weight:650;margin-right:2px}
+  #stage{position:relative;flex:1;min-height:0;background:var(--stage);overflow:hidden}
+  canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:default}
+  canvas[data-tool=pencil],canvas[data-tool=eraser]{cursor:crosshair}
+  canvas[data-tool=hand]{cursor:grab}
+  #hud{position:absolute;left:8px;bottom:8px;right:8px;display:flex;gap:10px;color:var(--mute);pointer-events:none;font-size:12px}
+  #zoomv{flex:none;color:var(--ink)}
+  button,select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 9px;cursor:pointer}
+  button:hover,select:hover{border-color:var(--accent)}
+  button.on,button.primary{background:var(--accent);border-color:var(--accent);color:var(--onacc,#fff)}
+  .grp[hidden]{display:none}
+  .thm{display:flex;align-items:center;gap:7px;padding:5px 9px}
+  .thm i{display:inline-flex;width:34px;height:18px;border-radius:5px;overflow:hidden;border:1px solid rgba(128,128,128,.5);flex:none}
+  .thm i u{flex:1}
+  button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .t{display:flex;flex-direction:column;align-items:center;gap:1px;padding:6px 0;border-color:transparent;background:transparent}
+  .t b{font-size:17px;font-weight:500;line-height:1}
+  .t small{font-size:10px;color:inherit;opacity:.8}
+  .tsep{height:1px;background:var(--line);margin:4px 2px}
+  label{color:var(--mute);display:flex;gap:6px;align-items:center}
+  input[type=color]{width:30px;height:26px;padding:0;border:1px solid var(--line);border-radius:6px;background:none}
+  input[type=range]{width:90px}
+  #strip{display:flex;gap:4px;overflow-x:auto;padding-bottom:2px}
+  #strip button{min-width:34px;flex:none;padding:4px 0}
+  #app{position:relative}
+  /* ---- Studio layout: compact floating tool palette you can drag next to your work ---- */
+  #grip{display:none}
+  body.studio #tools{position:absolute;z-index:5;left:12px;top:64px;width:auto;display:grid;grid-template-columns:repeat(2,40px);gap:2px;
+    padding:4px;border:1px solid var(--line);border-radius:10px;box-shadow:0 4px 14px rgba(0,0,0,.35);max-height:calc(100% - 16px)}
+  body.studio #tools .t small{display:none}
+  body.studio #tools .t{padding:7px 0}
+  body.studio #tools .tsep{grid-column:1/-1}
+  body.studio #grip{display:block;grid-column:1/-1;text-align:center;color:var(--mute);cursor:grab;touch-action:none;user-select:none;line-height:14px}
+  
+  /* ---- Right Sidebar layout ---- */
+  body.right #app{flex-direction:row-reverse}
+  body.right #tools{border-right:0;border-left:1px solid var(--line)}
+
+  /* ---- Top Bar layout ---- */
+  body.top #app{flex-direction:column}
+  body.top #tools{width:100%;height:auto;border-right:0;border-bottom:1px solid var(--line);flex-direction:row;align-items:center;padding:4px 8px;overflow-x:auto;overflow-y:hidden}
+  body.top #tools .t{flex-direction:row;padding:4px 8px;gap:4px}
+  body.top #tools .tsep{width:1px;height:20px;margin:0 4px}
+
+  /* ---- Quick menu (opens under the mouse) and settings window ---- */
+  #quick{position:fixed;z-index:20;display:grid;grid-template-columns:repeat(3,76px);gap:4px;padding:6px;background:var(--panel);
+    border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+  #quick[hidden],#settings[hidden]{display:none}
+  #quick button{padding:9px 2px;font-size:12px}
+  #settings{position:fixed;inset:0;z-index:30;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:12px}
+  #sp{background:var(--panel);border:1px solid var(--line);border-radius:12px;max-width:440px;width:100%;max-height:90%;overflow:auto;padding:14px;box-sizing:border-box}
+  #sp h4{margin:14px 0 6px}
+  #sp .hint{color:var(--mute);font-size:12px;margin:6px 0}
+  .krow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:2px 0}
+  .krow button{min-width:120px}
+  /* ---- Figure builder ---- */
+  #builder{position:fixed;inset:0;z-index:25;background:var(--bg);display:flex;flex-direction:column}
+  #builder[hidden]{display:none}
+  .brow{display:flex;gap:8px;align-items:center;padding:6px 8px;background:var(--panel);border-bottom:1px solid var(--line);overflow-x:auto;white-space:nowrap}
+  #fbWrap{position:relative;flex:1;min-height:0}
+  #fbMsg{padding:6px 10px;color:var(--mute);font-size:12px;background:var(--panel);border-top:1px solid var(--line)}
+  #fbPanel{background:var(--panel);border-top:1px solid var(--line);padding:6px 8px;display:flex;flex-direction:column;gap:6px;max-height:40%;overflow:auto}
+  .prow{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .prow>b{font-weight:600;min-width:46px;color:var(--mute);font-size:12px}
+  .sw{width:26px;height:26px;border-radius:50%;padding:0;border:2px solid var(--line);flex:none}
+  .sw.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+  .brow button.tog,#fbPanel button.tog{white-space:nowrap}
+  #fbWrap canvas{cursor:crosshair}
+  #fbWrap canvas.pan{cursor:grab}
+  #fbName{width:150px;font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:5px 8px}
+</style>
+</head>
+<body>
+<div id="app">
+  <nav id="tools" aria-label="Tools">
+    <div id="grip" title="Drag to move the tools">&#8943;</div>
+    <button class="t on" data-tool="pose" title="Pose (V)"><b>&#9673;</b><small>Pose</small></button>
+    <button class="t" data-tool="pencil" title="Pencil (P)"><b>&#9998;</b><small>Pencil</small></button>
+    <button class="t" data-tool="eraser" title="Eraser (E)"><b>&#9003;</b><small>Eraser</small></button>
+    <button class="t" data-tool="fill" title="Fill bucket (G)"><b>&#129699;</b><small>Fill</small></button>
+    <button class="t" data-tool="burst" title="Impact burst (B)"><b>&#128165;</b><small>Burst</small></button>
+    <button class="t" data-tool="hand" title="Move view (H or hold Space)"><b>&#10021;</b><small>Move</small></button>
+    <div class="tsep"></div>
+    <button class="t" id="bUndo" title="Undo (Ctrl+Z)"><b>&#8630;</b><small>Undo</small></button>
+    <button class="t" id="bZin" title="Zoom in (+)"><b>+</b><small>Zoom in</small></button>
+    <button class="t" id="bZout" title="Zoom out (-)"><b>&minus;</b><small>Zoom out</small></button>
+    <button class="t" id="bFit" title="Fit to screen (0)"><b>&#9974;</b><small>Fit</small></button>
+    <div class="tsep"></div>
+    <button class="t" id="bAddP" title="Add the chosen character"><b>&#9786;</b><small>Add fig</small></button>
+    <button class="t" id="bDelP" title="Remove selected figure"><b>&#10005;</b><small>Del fig</small></button>
+  </nav>
+  <div id="main">
+    <div id="opts">
+      <span id="title" class="brand">Stick Animator</span>
+      <div class="grp"><button id="bSet" title="Settings">&#9881; Settings</button></div>
+      <div class="grp"><select id="charSel" aria-label="Character"></select><button id="bStyle">Change look</button></div>
+      <div class="grp"><button id="bBuild" title="Make your own figure">Build figure</button><button id="bImpFig" title="Import a figure file (.json)">Import figure</button><input type="file" id="figIn" accept=".json,application/json" multiple hidden></div>
+      <div class="grp"><label>Pen <input type="color" id="penColor" value="#1d2330"></label><input type="range" id="penSize" min="1" max="24" value="4" aria-label="Pen size"></div>
+      <div class="grp" id="grpFill" hidden><label title="How different a color can be and still get filled">Fill tolerance <input type="range" id="fillTol" min="5" max="120" value="48"></label></div>
+      <div class="grp" id="grpBurst" hidden><select id="burstStyle" aria-label="Burst style"><option value="rays">Focus rays</option><option value="star">Starburst</option><option value="speed">Speed lines</option><option value="slash">Slash</option></select>
+        <label>Amount <input type="range" id="burstN" min="4" max="80" value="28"></label><span style="color:var(--mute)">Drag to size it. Uses the pen color and size.</span></div>
+      <div class="grp" id="grpFx"><b title="Impact look for the current frame. Shake and zoom show when you play or save.">Impact</b>
+        <select id="fxLook" aria-label="Impact look"><option value="none">Normal</option><option value="invert">Invert</option><option value="bw">Black on white</option><option value="wb">White on black</option><option value="br">Black on red</option><option value="wr">White on red</option><option value="rb">Red on black</option><option value="by">Black on yellow</option><option value="yb">Yellow on black</option><option value="custom">Custom colors</option></select>
+        <input type="color" id="fxFg" value="#000000" title="Line color"><input type="color" id="fxBg" value="#ffffff" title="Paper color">
+        <label title="Where dark turns to light">Cut <input type="range" id="fxTh" min="20" max="235" value="128"></label>
+        <label>Shake <input type="range" id="fxShake" min="0" max="30" value="0"></label>
+        <label>Zoom <input type="range" id="fxZoom" min="100" max="160" value="100"></label>
+        <button id="bImpact" title="Copy this frame as a new flash frame">&#9889; Impact frame</button></div>
+      <div class="grp"><button id="bMode" class="on">Rigid bones</button><button id="bIK" class="on" title="IK on: drag a hand or foot and the elbow/knee follow. Off: each bone swings on its own.">IK bones</button><button id="bOnion" class="on">Onion skin</button></div>
+      <div class="grp"><button id="bRef" title="Put a reference video behind your drawing (only for you, not saved in exports)">&#127910; Reference video</button><input type="file" id="refIn" accept="video/*" hidden></div>
+      <div class="grp" id="grpRef" hidden><label title="Show or hide the video"><input type="checkbox" id="refOn" checked> Show</label>
+        <label>Opacity <input type="range" id="refOp" min="0" max="100" value="50"></label>
+        <label>Scale <input type="range" id="refSc" min="10" max="400" value="100"></label>
+        <label>X <input type="range" id="refX" min="-800" max="800" value="0"></label>
+        <label>Y <input type="range" id="refY" min="-450" max="450" value="0"></label>
+        <label title="Video time that matches frame 1, in seconds">Start (s) <input type="number" id="refSt" min="0" step="0.1" value="0" style="width:56px"></label>
+        <button id="refDrag" title="Drag on the canvas to move the video">Drag video</button>
+        <button id="refReset">Reset</button><button id="refRm">Remove</button></div>
+      <div class="grp" id="grpRefT" hidden><b title="Which moment of the video this frame shows">Frame time</b>
+        <button id="refPrev" title="Back one video frame">&#9664;</button>
+        <input type="range" id="refT" min="0" max="10" step="0.01" value="0" aria-label="Video time for this frame" style="width:140px">
+        <button id="refNext" title="Forward one video frame">&#9654;</button>
+        <input type="number" id="refTn" min="0" step="0.01" value="0" style="width:64px" aria-label="Video time in seconds"> s
+        <span id="refMode" style="color:var(--mute)">auto</span>
+        <button id="refAuto" title="Go back to automatic timing for this frame">Auto</button>
+        <button id="refAutoAll" title="Clear manual times on every frame">Auto all</button></div>
+      <div class="grp"><button id="bSaveProj" title="Save the whole animation to a file">Save project</button><button id="bOpenProj" title="Open a saved project file">Open project</button><input type="file" id="projIn" accept=".json,application/json" hidden></div>
+      <div class="grp"><button id="bPng">Save PNG</button><button id="bVid">Save video</button></div>
+    </div>
+    <div id="stage"><canvas id="cv" data-tool="pose"></canvas>
+      <div id="hud"><span id="zoomv">100%</span><span id="msg">Drag the dots to pose the figure. Add a frame to copy the pose, then change it.</span></div>
+    </div>
+    <footer id="tl">
+      <div class="row">
+        <button id="bPlay" class="primary">Play</button>
+        <label>Speed <input id="fps" type="range" min="1" max="24" value="8"> <span id="fpsv">8</span> fps</label>
+        <button id="bAddF">Add frame</button><button id="bDelF">Delete frame</button>
+      </div>
+      <div id="strip" aria-label="Frames"></div>
+    </footer>
+  </div>
+</div>
+
+<div id="builder" hidden>
+  <div class="brow"><b>Figure builder</b><input id="fbName" type="text" placeholder="Figure name" maxlength="30">
+    <button id="fbUse" class="primary">Save &amp; add</button><button id="fbFile">Save file</button><button id="fbClose">Close</button></div>
+  <div class="brow">
+    <button id="fbAdd" class="on tog" title="Drag out of a dot to pull a new bone. Tap empty space to add one.">&#9998; Draw</button>
+    <button id="fbMove" class="tog" title="Drag any dot to move it">&#10021; Move</button>
+    <button id="fbPanBtn" class="tog" title="Drag to slide the view (two fingers also work)">&#9995; Pan</button>
+    <button id="fbUndo">Undo</button><button id="fbDel">Delete</button>
+    <button id="fbMan" title="Start from a ready-made stick man">Stick man</button><button id="fbNew">New</button>
+    <button id="fbZin">+</button><button id="fbZout">&minus;</button>
+    <label><input type="checkbox" id="fbMir" checked> Mirror</label>
+    <label><input type="checkbox" id="fbKids" checked> Move attached</label></div>
+  <div id="fbWrap"><canvas id="fbCv"></canvas></div>
+  <div id="fbPanel">
+    <div class="prow"><b>Shape</b>
+      <button id="fbK0" class="tog on">Line</button><button id="fbK1" class="tog" title="Pointed spike, drawn over the head">Spike</button><button id="fbK2" class="tog" title="Leaf-shaped lock, drawn behind the head">Lock</button>
+      <label>Thick <input type="range" id="fbW" min="1" max="30" value="5"></label>
+      <label><input type="checkbox" id="fbCirc"> Circle</label><label>Size <input type="range" id="fbR" min="3" max="60" value="14"></label></div>
+    <div class="prow"><b>Color</b>
+      <button id="fbTL" class="tog on">Line / hair</button><button id="fbTF" class="tog" title="Fill inside a circle (face, ball...)">Circle fill</button>
+      <span class="prow" id="fbSw"></span>
+      <input type="color" id="fbCol" value="#1d2330" aria-label="Custom color"><button id="fbAuto" title="Back to the default / pen color">Auto</button>
+      <label><input type="checkbox" id="fbBr"> Whole branch</label></div>
+    <div class="prow"><b>Hair</b><span class="prow" id="fbHairBtns"></span>
+      <label>Hair color <input type="color" id="fbHair" value="#1d2330"></label><button id="fbHairClr">Clear hair</button></div>
+  </div>
+  <div id="fbMsg"></div>
+</div>
+<div id="quick" hidden></div>
+<div id="settings" hidden><div id="sp" role="dialog" aria-label="Settings">
+  <div class="row" style="justify-content:space-between"><div class="row"><button id="tabGen" class="on">Settings</button><button id="tabAbout">About</button></div><button id="bSetClose">Close</button></div>
+  <div id="paneGen">
+  <h4>Color theme</h4><div class="row" id="setThemes" style="flex-wrap:wrap"></div>
+  <h4>Layout</h4><div class="row" id="setLayouts"></div>
+  <p class="hint">Studio: compact tools that float over the workspace. Drag the dots at the top of the palette to put it next to your work. In both layouts, right-click (or long-press) the canvas for a quick menu under the mouse.</p>
+  <h4>Shortcuts</h4><div id="setKeys"></div>
+  <div class="row" style="margin-top:8px"><button id="bKeyReset">Reset shortcuts</button><span id="setMsg" class="hint"></span></div>
+  <p class="hint">Hold Space to move the view (this one is fixed).</p>
+  </div>
+  <div id="paneAbout" hidden></div>
+</div></div>
+<script>
+/* ================= CUSTOMIZE HERE ================= */
+const APP_TITLE     = "Stick Animator";   // name shown at the top
+const CANVAS_W      = 800;                // drawing width in pixels (lower = faster on weak devices)
+const CANVAS_H      = 450;                // drawing height in pixels
+const CANVAS_BG     = "#ffffff";          // background color of the animation
+const LINE_WIDTH    = 5;                  // thickness of the stick lines
+const HEAD_RADIUS   = 20;                 // size of the head
+const DEFAULT_FPS   = 8;                  // starting speed (frames per second)
+// Characters in the dropdown: label = name shown, color = body color. To add one, add a line here
+// AND a matching entry in the HEADS list further down (the hair/hat drawing).
+const CHARS = {
+  classic: {label: "Classic", color: "#1d2330"},
+  sunfist:    {label: "Sunfist",    color: "#f28c1b"},
+  ironflame:  {label: "Ironflame",  color: "#2f6df6"},
+  whiskers:  {label: "Whiskers",  color: "#e8590c"},
+  captain:   {label: "Captain Reed",   color: "#d6402f"},
+  ninja:   {label: "Ninja",   color: "#2b2f3a"},
+  wizard:  {label: "Wizard",  color: "#7a52cc"},
+  knight:  {label: "Knight",  color: "#6f7a8f"},
+  robot:   {label: "Robot",   color: "#2a9d8f"},
+  pinkhorn:    {label: "Pinkhorn",    color: "#c62f3a"},
+  frostveil:    {label: "Frostveil",    color: "#2b3a67"},
+  quadeye:  {label: "Quadeye",  color: "#a23b4b"},
+  wheelwarden:{label: "Wheelwarden",color: "#3d4452"},
+  nightfang:  {label: "Nightfang",  color: "#3a4a8c"},
+  longmane:  {label: "Longmane",  color: "#a12a2a"},
+  spiralmask:   {label: "Spiralmask",   color: "#4a3f58"}
+};
+const DEFAULT_LAYOUT = "classic";         // layout used the first time: "classic", "studio", "right", or "top"
+const LAYOUTS       = {classic: "Classic", studio: "Studio (compact)", right: "Right Sidebar", top: "Top Bar"};   // names shown in Settings
+const STORAGE_KEY   = "stickAnimatorSettings";   // name used to remember settings on this device
+// Default shortcuts. Format: a key, or modifiers + key, e.g. "ctrl+z", "shift+a", "arrowleft", "f2".
+const DEFAULT_KEYS  = {pose:"v", pencil:"p", eraser:"e", hand:"h", undo:"ctrl+z", zoomIn:"+", zoomOut:"-", fit:"0", play:"enter",
+                       prevFrame:"arrowleft", nextFrame:"arrowright", addFrame:"n", delFrame:"delete", onion:"o", mode:"m", ik:"i", fill:"g", burst:"b", quick:"q", settings:"f2", saveProj:"ctrl+s", openProj:"ctrl+o"};
+// What appears in the quick menu (right-click / long-press on the canvas). Use names from DEFAULT_KEYS.
+const QUICK_ITEMS   = ["pose", "pencil", "eraser", "hand", "undo", "play", "addFrame", "onion"];
+// About page (Settings > About). Write your own details here.
+const ABOUT_NAME     = "Nibir";           // your name or studio name (shown as "By ...")
+const ABOUT_VERSION  = "1.2";             // version number shown to customers
+const ABOUT_TEXT     = "A simple tool for stick figure animation.";   // one short sentence (can be empty "")
+const ABOUT_CONTACTS = [                  // label + link: "https://...", "mailto:..." or "tel:...". Add or remove lines freely.
+  {label: "Discord", url: "real_nibir"},                       // plain text (not a link), so it just shows the name
+  {label: "GitHub",  url: "https://github.com/Immutable-Nibir/"}
+];
+const CUSTOM_COLOR   = "#1d2330";         // starting line color of custom figures (the pen color can recolor them)
+const MAX_JOINTS     = 100;
+const MAX_PARTS      = 150;               // most details (shapes, strokes, painted bits) a custom figure may have               // most dots a custom figure may have
+const EXPORT_NAME   = "my-animation";     // file name used when saving
+/* ================================================== */
+
+document.title = APP_TITLE;
+document.getElementById("title").textContent = APP_TITLE;
+
+const $ = id => document.getElementById(id);
+const cv = $("cv"), vctx = cv.getContext("2d"), stage = $("stage");
+let ctx = vctx;                                       // the canvas currently being drawn on (screen or export)
+const ex = document.createElement("canvas"); ex.width = CANVAS_W; ex.height = CANVAS_H;   // hidden canvas used for saving
+const ectx = ex.getContext("2d");
+const view = {z: 1, x: 0, y: 0};                      // zoom and pan of the workspace
+let HR = 6;                                           // size of the pose dots (kept the same on screen when zooming)
+
+/* ---- The figure ----
+   Each joint has a "parent". Dragging a joint also moves everything attached below it
+   (e.g. dragging the neck moves the head and arms; dragging the hip moves the whole body). */
+const PARENT = {hip:null, neck:"hip", head:"neck", lElbow:"neck", lHand:"lElbow",
+                rElbow:"neck", rHand:"rElbow", lKnee:"hip", lFoot:"lKnee", rKnee:"hip", rFoot:"rKnee"};
+const BONES = [["hip","neck"],["neck","head"],["neck","lElbow"],["lElbow","lHand"],["neck","rElbow"],
+               ["rElbow","rHand"],["hip","lKnee"],["lKnee","lFoot"],["hip","rKnee"],["rKnee","rFoot"]];
+// Starting pose: offsets (x, y) from the hip. Edit these to change the default pose.
+const TEMPLATE = {hip:[0,0], neck:[0,-70], head:[0,-70-HEAD_RADIUS], lElbow:[-26,-48], lHand:[-38,-18],
+                  rElbow:[26,-48], rHand:[38,-18], lKnee:[-14,45], lFoot:[-18,92], rKnee:[14,45], rFoot:[18,92]};
+const NAMES = Object.keys(PARENT);
+const ENDS = ["lHand", "rHand", "lFoot", "rFoot"];   // hands and feet: dragging these bends the elbow/knee (IK)
+const LEN = {};                                       // fixed bone lengths, measured from the starting pose
+for (const n of NAMES) if (PARENT[n]) LEN[n] = Math.hypot(TEMPLATE[n][0]-TEMPLATE[PARENT[n]][0], TEMPLATE[n][1]-TEMPLATE[PARENT[n]][1]);
+const BEND = {};                                      // which way each elbow/knee bends (kept from the starting pose)
+for (const n of ENDS){
+  const m = PARENT[n], r = PARENT[m];
+  BEND[n] = Math.sign((TEMPLATE[m][0]-TEMPLATE[r][0])*(TEMPLATE[n][1]-TEMPLATE[r][1]) - (TEMPLATE[m][1]-TEMPLATE[r][1])*(TEMPLATE[n][0]-TEMPLATE[r][0])) || 1;
+}
+let ik = true;                                        // true = dragging a hand/foot bends the elbow/knee (IK); false = each bone just swings (FK)
+let rigid = true;                                     // true = fixed-size bones, false = stretchy rubber
+
+/* Every figure has a "rig" = its joints and who is attached to whom.
+   The built-in figure uses DEFAULT_RIG. Custom figures get their own rig, stored in RIGS. */
+const RIGS = {};                                      // custom figure types: key -> rig
+const kidsOf = parent => { const k = {}; for (const n in parent) k[n] = []; for (const n in parent) if (parent[n] !== null) k[parent[n]].push(n); return k; };
+const DEFAULT_RIG = {names: NAMES, parent: PARENT, kids: kidsOf(PARENT), ends: ENDS, len: LEN, bend: BEND};
+const rigOf = f => RIGS[f.t] || DEFAULT_RIG;
+function subtree(rig, n){       // a joint plus everything attached below it
+  const out = [n];
+  for (let i = 0; i < out.length; i++) for (const k of rig.kids[out[i]]) out.push(k);
+  return out;
+}
+/* Moves joint n toward target t. Hip moves the whole body.
+   Rubber: only the dragged joint moves, so bones stretch.
+   Rigid: with IK on, hands/feet use 2-bone IK (elbow/knee follow), other joints swing around their parent. */
+function moveJoint(f, n, t){
+  const J = f.j, rig = rigOf(f), par = rig.parent[n];
+  if (par === null){ const dx = t[0]-J[n][0], dy = t[1]-J[n][1]; for (const k of rig.names){ J[k][0] += dx; J[k][1] += dy; } return; }
+  if (!rigid){                                        // rubber: custom parts slide along with the joint
+    const dx = t[0]-J[n][0], dy = t[1]-J[n][1];
+    for (const k of (rig === DEFAULT_RIG ? [n] : subtree(rig, n))){ J[k][0] += dx; J[k][1] += dy; }
+    return;
+  }
+  if (ik && rig.ends.includes(n)){
+    const m = par, r = rig.parent[m], L1 = rig.len[m], L2 = rig.len[n];
+    const vx = t[0]-J[r][0], vy = t[1]-J[r][1], d = Math.hypot(vx, vy) || 1e-6;
+    const dc = Math.min(Math.max(d, Math.abs(L1-L2) + 0.01), L1 + L2 - 0.01);   // can't reach farther than the limb is long
+    const ux = vx/d, uy = vy/d;
+    const th = -rig.bend[n] * Math.acos((L1*L1 + dc*dc - L2*L2) / (2*L1*dc)), c = Math.cos(th), s = Math.sin(th);
+    J[m] = [J[r][0] + (ux*c - uy*s)*L1, J[r][1] + (ux*s + uy*c)*L1];
+    J[n] = [J[r][0] + ux*dc, J[r][1] + uy*dc];
+    return;
+  }
+  const px = J[par][0], py = J[par][1];
+  const da = Math.atan2(t[1]-py, t[0]-px) - Math.atan2(J[n][1]-py, J[n][0]-px), c = Math.cos(da), s = Math.sin(da);
+  for (const k of subtree(rig, n)){ const x = J[k][0]-px, y = J[k][1]-py; J[k] = [px + x*c - y*s, py + y*c + x*s]; }
+}
+function makeFigure(x, y, type){
+  const j = {}, rig = RIGS[type];
+  if (rig){ for (const n of rig.names) j[n] = [x + rig.start[n][0], y + rig.start[n][1]]; return {t: type, c: rig.color, j}; }   // custom figure
+  for (const n of NAMES) j[n] = [x + TEMPLATE[n][0], y + TEMPLATE[n][1]];
+  return {t: type, c: CHARS[type].color, j};
+}
+
+/* ---- App state ---- */
+let frames = [[makeFigure(CANVAS_W/2, CANVAS_H/2 - 10, "classic")]]; // frames[frameIndex][figureIndex]
+let cur = 0, sel = 0, fps = DEFAULT_FPS, onion = true, playing = false, busy = false, drag = null;
+let refT = [null];                                    // manual video time (seconds) for each frame; null = automatic
+let history = [], saver = null, ink = [[]], tool = "pose";   // ink[frame] = list of pencil strokes
+const clone = o => JSON.parse(JSON.stringify(o));
+
+function snap(){ history.push(JSON.stringify({frames, ink, cur, sel, refT})); if (history.length > 60) history.shift(); }
+function say(t){ $("msg").textContent = t; }
+
+/* ---- Character heads (hair, hats, faces) ----
+   Each function draws around the head center. Units: R = head radius, up is negative y.
+   Edit the numbers/colors to tweak a look. */
+function poly(pts, fill, R){
+  ctx.fillStyle = fill; ctx.beginPath();
+  pts.forEach((q, i) => i ? ctx.lineTo(q[0]*R, q[1]*R) : ctx.moveTo(q[0]*R, q[1]*R));
+  ctx.closePath(); ctx.fill();
+}
+const HEADS = {
+  classic(){},
+  sunfist(R){   // spiky black hair
+    poly([[-1,-.3],[-1.4,-1.2],[-.6,-.9],[-.8,-1.9],[-.1,-1.1],[.3,-2.1],[.55,-1.1],[1.3,-1.7],[1,-.7],[1.4,-.5],[1,-.2],[.6,-.6],[0,-.8],[-.6,-.6]], "#111", R);
+  },
+  ironflame(R){ // tall flame hair with widow's peak
+    poly([[-1,-.3],[-1,-1.2],[-.5,-1],[-.45,-2.3],[0,-1.2],[.45,-2.3],[.5,-1],[1,-1.2],[1,-.3],[.4,-.75],[0,-.45],[-.4,-.75]], "#111", R);
+  },
+  whiskers(R){ // yellow spikes, headband, whisker marks
+    poly([[-1,-.3],[-1.3,-1.1],[-.6,-.8],[-.7,-1.7],[-.1,-1],[.4,-1.8],[.5,-1],[1.2,-1.4],[1,-.5],[1.3,-.3],[0,-.4]], "#f6d02f", R);
+    ctx.fillStyle = "#2a4fa8"; ctx.fillRect(-1.05*R, -.5*R, 2.1*R, .4*R);
+    ctx.fillStyle = "#d5dbe6"; ctx.fillRect(-.4*R, -.47*R, .8*R, .34*R);
+    ctx.strokeStyle = "#222"; ctx.lineWidth = 1.2; ctx.beginPath();
+    for (const sx of [-1, 1]) for (const y of [.15, .35]){ ctx.moveTo(sx*.5*R, y*R); ctx.lineTo(sx*.95*R, (y+.05)*R); }
+    ctx.stroke();
+  },
+  captain(R){  // wide hat with red band
+    ctx.fillStyle = "#e8c25a"; ctx.beginPath(); ctx.ellipse(0, -.35*R, 1.9*R, .45*R, 0, 0, 6.2832); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, -.45*R, 1.05*R, 1.05*R, 0, Math.PI, 0); ctx.fill();
+    ctx.strokeStyle = "#d6402f"; ctx.lineWidth = .35*R; ctx.lineCap = "butt";
+    ctx.beginPath(); ctx.moveTo(-1.02*R, -.55*R); ctx.lineTo(1.02*R, -.55*R); ctx.stroke();
+  },
+  ninja(R){  // dark headband with trailing tails
+    ctx.fillStyle = "#222"; ctx.fillRect(-1.05*R, -.5*R, 2.1*R, .4*R);
+    ctx.strokeStyle = "#222"; ctx.lineWidth = 3; ctx.lineCap = "round"; ctx.beginPath();
+    ctx.moveTo(1*R, -.3*R); ctx.lineTo(2*R, .1*R); ctx.moveTo(1*R, -.3*R); ctx.lineTo(1.8*R, -.6*R); ctx.stroke();
+  },
+  wizard(R){ // pointy purple hat with a star
+    poly([[-1.5,-.5],[1.5,-.5],[.3,-3.1]], "#5b3fa8", R);
+    ctx.fillStyle = "#f6d02f"; ctx.beginPath(); ctx.arc(0, -1.4*R, .22*R, 0, 6.2832); ctx.fill();
+  },
+  knight(R){ // grey helmet with red plume
+    ctx.fillStyle = "#9aa3b5"; ctx.beginPath(); ctx.arc(0, 0, 1.08*R, Math.PI, 0); ctx.fill();
+    ctx.fillStyle = "#333"; ctx.fillRect(-.8*R, -.1*R, 1.6*R, .22*R);
+    ctx.fillStyle = "#d6402f"; ctx.beginPath(); ctx.ellipse(0, -1.35*R, .3*R, .5*R, 0, 0, 6.2832); ctx.fill();
+  },
+  robot(R, c){ // square head with antenna
+    ctx.fillStyle = CANVAS_BG; ctx.strokeStyle = c; ctx.lineWidth = LINE_WIDTH * .7;
+    ctx.fillRect(-R, -R, 2*R, 2*R); ctx.strokeRect(-R, -R, 2*R, 2*R);
+    ctx.beginPath(); ctx.moveTo(0, -R); ctx.lineTo(0, -1.7*R); ctx.stroke();
+    ctx.fillStyle = "#d6402f"; ctx.beginPath(); ctx.arc(0, -1.8*R, .2*R, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = "#2a9d8f"; ctx.fillRect(-.6*R, -.3*R, .45*R, .4*R); ctx.fillRect(.15*R, -.3*R, .45*R, .4*R);
+  },
+  pinkhorn(R){   // pink hair with small red horns
+    ctx.lineWidth = 1.5; ctx.strokeStyle = "#b5456f";
+    poly([[-1.1,.6],[-1.2,-.5],[-.7,-1.3],[0,-1.5],[.7,-1.3],[1.2,-.5],[1.1,.6],[.8,0],[.5,-.7],[-.5,-.7],[-.8,0]], "#f27aa8", R); ctx.stroke();
+    poly([[-.75,-1.2],[-.5,-2],[-.2,-1.4]], "#d6402f", R); poly([[.75,-1.2],[.5,-2],[.2,-1.4]], "#d6402f", R);
+  },
+  frostveil(R){   // white spiky hair with a black blindfold
+    ctx.lineWidth = 1.5; ctx.strokeStyle = "#8a8f9c";
+    poly([[-1,-.2],[-1.3,-1.1],[-.6,-.8],[-.65,-1.8],[-.1,-1],[.3,-1.9],[.5,-1],[1.2,-1.6],[1,-.6],[1.3,-.4],[1,-.2],[0,-.5]], "#f4f4f6", R); ctx.stroke();
+    ctx.fillStyle = "#111"; ctx.fillRect(-1.05*R, -.3*R, 2.1*R, .5*R);
+  },
+  quadeye(R){ // short pink spikes, face marks, extra eyes
+    ctx.lineWidth = 1.5; ctx.strokeStyle = "#b5456f";
+    poly([[-1,-.2],[-1.2,-1],[-.5,-.8],[-.4,-1.6],[0,-.9],[.4,-1.6],[.5,-.8],[1.2,-1],[1,-.2],[.5,-.5],[-.5,-.5]], "#f29bb4", R); ctx.stroke();
+    ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(-.35*R, .42*R, .1*R, 0, 6.2832); ctx.arc(.35*R, .42*R, .1*R, 0, 6.2832); ctx.fill();
+    ctx.strokeStyle = "#222"; ctx.lineWidth = 1.3; ctx.beginPath();
+    for (const sx of [-1, 1]){ ctx.moveTo(sx*.2*R, .25*R); ctx.lineTo(sx*.8*R, .3*R); ctx.moveTo(sx*.25*R, -.25*R); ctx.lineTo(sx*.75*R, -.2*R); }
+    ctx.stroke();
+  },
+  wheelwarden(R){ // pale face with a golden wheel halo
+    ctx.fillStyle = "#d3d6de"; ctx.beginPath(); ctx.arc(0, 0, R - 2, 0, 6.2832); ctx.fill();
+    ctx.fillStyle = "#222"; ctx.fillRect(-.6*R, -.05*R, 1.2*R, .14*R);
+    ctx.strokeStyle = "#e0b84c"; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(0, -2.1*R, .9*R, 0, 6.2832);
+    for (let i = 0; i < 8; i++){ const a = i * Math.PI / 4; ctx.moveTo(0, -2.1*R); ctx.lineTo(Math.cos(a)*1.35*R, -2.1*R + Math.sin(a)*1.35*R); }
+    ctx.stroke();
+  },
+  nightfang(R){ // dark spiky hair with long bangs, red eyes
+    poly([[-1.05,-.1],[-1.3,-1],[-.7,-.9],[-.8,-1.7],[-.2,-1.1],[.2,-1.8],[.5,-1],[1.2,-1.3],[1.05,-.1],[.65,-.4],[.55,.12],[.3,-.35],[0,.15],[-.25,-.4],[-.6,-.35]], "#15171c", R);
+    ctx.fillStyle = "#d6202f"; ctx.beginPath(); ctx.arc(-.35*R, .08*R, .13*R, 0, 6.2832); ctx.arc(.35*R, .08*R, .13*R, 0, 6.2832); ctx.fill();
+  },
+  longmane(R){ // wild spiky hair that falls past the shoulders, red eyes
+    const hair = "#15171c";
+    poly([[-1,-.2],[-1.3,-1],[-.6,-.8],[-.7,-1.8],[-.1,-1.1],[.3,-1.9],[.5,-1],[1.3,-1.3],[1,-.2],[.5,-.5],[-.5,-.5]], hair, R);
+    for (const sx of [-1, 1])
+      poly([[sx*1,-.5],[sx*2,.3],[sx*1.2,.3],[sx*2.2,1.5],[sx*1.1,.9],[sx*1.5,2.3],[sx*.9,.8]], hair, R);
+    ctx.fillStyle = "#d6202f"; ctx.beginPath(); ctx.arc(-.35*R, .05*R, .13*R, 0, 6.2832); ctx.arc(.35*R, .05*R, .13*R, 0, 6.2832); ctx.fill();
+  },
+  spiralmask(R){  // orange spiral mask with one eye hole, black spiky hair
+    ctx.fillStyle = "#e8590c"; ctx.beginPath(); ctx.arc(0, 0, R - 2, 0, 6.2832); ctx.fill();
+    ctx.strokeStyle = "#a8400a"; ctx.lineWidth = 1.4; ctx.beginPath();
+    for (let a = 0; a < 12; a += .4){ const r = a * .055 * R, x = .3*R + Math.cos(a)*r, y = -.1*R + Math.sin(a)*r; a ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+    ctx.stroke();
+    ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(.3*R, -.1*R, .2*R, 0, 6.2832); ctx.fill();
+    poly([[-1.05,-.2],[-1.3,-1],[-.6,-.85],[-.7,-1.7],[-.1,-1.1],[.35,-1.8],[.5,-1],[1.25,-1.2],[1.05,-.2],[.5,-.5],[-.5,-.5]], "#15171c", R);
+  }
+};
+function drawHead(f){
+  const h = f.j.head, n = f.j.neck, R = HEAD_RADIUS;
+  ctx.save(); ctx.translate(h[0], h[1]);
+  ctx.rotate(Math.atan2(h[1]-n[1], h[0]-n[0]) + Math.PI/2);   // head tilts with the neck
+  if (f.t !== "robot"){ ctx.fillStyle = "#222"; ctx.beginPath();  // simple eyes
+    ctx.arc(-.35*R, .05*R, .1*R, 0, 6.2832); ctx.arc(.35*R, .05*R, .1*R, 0, 6.2832); ctx.fill(); }
+  (HEADS[f.t] || HEADS.classic)(R, f.c);
+  ctx.restore();
+}
+
+/* ---- Drawing ---- */
+/* Custom figure: lines grouped by thickness (few draw calls = fast), then circles, then the dots. */
+function hairShape(c, J, rig, s, col){                // spike / lock: a filled shape from the parent's edge out to the tip
+  const [n, p, w, k, cc] = s, a = J[p], b = J[n];
+  const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, nx = -uy, ny = ux;
+  const r = rig.cr[p] || 0, off = Math.min(Math.max(r - 2, 0), L * .8), sx = a[0] + ux * off, sy = a[1] + uy * off;
+  c.beginPath();
+  if (k === 1){ c.moveTo(sx + nx * w, sy + ny * w); c.lineTo(b[0], b[1]); c.lineTo(sx - nx * w, sy - ny * w); c.closePath(); }
+  else { const mx = (sx + b[0]) / 2, my = (sy + b[1]) / 2;
+    c.moveTo(sx + nx * w * .6, sy + ny * w * .6); c.quadraticCurveTo(mx + nx * w * 1.4, my + ny * w * 1.4, b[0], b[1]);
+    c.quadraticCurveTo(mx - nx * w * 1.4, my - ny * w * 1.4, sx - nx * w * .6, sy - ny * w * .6); c.closePath(); }
+  c.fillStyle = cc || col; c.fill(); c.strokeStyle = col; c.lineWidth = 2; c.stroke();
+}
+/* Details stuck on a bone: they use the bone as their ruler (x along it, y sideways), so they follow every pose. */
+function partPath(c, kind, sw, sh){
+  c.beginPath();
+  if (kind === "circle") c.arc(0, 0, sw, 0, 6.2832);
+  else if (kind === "oval") c.ellipse(0, 0, sw, sh, 0, 0, 6.2832);
+  else if (kind === "rect") c.rect(-sw, -sh, sw * 2, sh * 2);
+  else if (kind === "tri"){ c.moveTo(sw, 0); c.lineTo(-sw, -sh); c.lineTo(-sw, sh); c.closePath(); }
+  else if (kind === "diamond"){ c.moveTo(sw, 0); c.lineTo(0, sh); c.lineTo(-sw, 0); c.lineTo(0, -sh); c.closePath(); }
+  else { for (let i = 0; i < 10; i++){ const a = i * Math.PI / 5 - Math.PI / 2, r = i % 2 ? sw * .45 : sw; i ? c.lineTo(Math.cos(a) * r, Math.sin(a) * r) : c.moveTo(Math.cos(a) * r, Math.sin(a) * r); } c.closePath(); }
+}
+function paintPart(c, J, rig, q, col){
+  const b = J[q.j]; if (!b) return;
+  const p = rig.parent[q.j]; let ox = b[0], oy = b[1], ux = 1, uy = 0, L = 1;
+  if (p !== null){ const a = J[p], dx = b[0] - a[0], dy = b[1] - a[1]; L = Math.hypot(dx, dy) || 1; ox = a[0]; oy = a[1]; ux = dx / L; uy = dy / L; }
+  const W = (u, v) => [ox + ux * u * L - uy * v, oy + uy * u * L + ux * v], line = q.c || col;
+  c.lineCap = "round"; c.lineJoin = "round";
+  if (q.k === "pen"){
+    c.beginPath(); for (let i = 0; i < q.p.length; i += 2){ const w = W(q.p[i], q.p[i + 1]); i ? c.lineTo(w[0], w[1]) : c.moveTo(w[0], w[1]); }
+    if (q.p.length === 2){ const w = W(q.p[0], q.p[1]); c.lineTo(w[0] + .01, w[1]); }
+    if (q.fl && q.p.length >= 6){ c.closePath(); c.fillStyle = q.fl; c.fill(); }
+    c.strokeStyle = line; c.lineWidth = Math.max(1, q.w); c.stroke();
+  } else if (q.k === "seg"){
+    const a = W(q.x, 0), z = W(q.x2, 0); c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(z[0], z[1]);
+    c.lineCap = q.cap ? "round" : "butt"; c.strokeStyle = line; c.lineWidth = Math.max(1, q.w); c.stroke(); c.lineCap = "round";
+  } else if (q.k === "band"){
+    const a = W(q.x, -q.sw), z = W(q.x, q.sw); c.beginPath(); c.moveTo(a[0], a[1]); c.lineTo(z[0], z[1]);
+    c.lineCap = q.cap ? "round" : "butt"; c.strokeStyle = line; c.lineWidth = Math.max(1, q.w); c.stroke(); c.lineCap = "round";
+  } else {
+    const w = W(q.x, q.y); c.save(); c.translate(w[0], w[1]); c.rotate(Math.atan2(uy, ux) + (q.a || 0) * Math.PI / 180); if (q.m) c.scale(1, -1);
+    partPath(c, q.k, q.sw, q.sw * q.asp);
+    if (q.fl){ c.fillStyle = q.fl; c.fill(); }
+    if (q.w > 0){ c.strokeStyle = line; c.lineWidth = q.w; c.stroke(); }
+    c.restore();
+  }
+}
+/* Paints a custom figure on any context: locks (behind), colored lines grouped by thickness, circles, then spikes (in front). */
+function paintCustom(c, J, rig, col){
+  c.lineCap = "round"; c.lineJoin = "round";
+  for (const q of rig.pb) paintPart(c, J, rig, q, col);
+  for (const s of rig.spikes) if (s[3] === 2) hairShape(c, J, rig, s, col);
+  for (const key in rig.groups){
+    const g = rig.groups[key]; c.strokeStyle = g.c || col; c.lineWidth = g.w; c.beginPath();
+    for (const [a, b] of g.segs){ c.moveTo(J[a][0], J[a][1]); c.lineTo(J[b][0], J[b][1]); }
+    c.stroke();
+  }
+  for (const [n, r, w, cc, fl] of rig.circles){ c.lineWidth = w; c.strokeStyle = cc || col; c.fillStyle = fl || CANVAS_BG; c.beginPath(); c.arc(J[n][0], J[n][1], r, 0, 6.2832); c.fill(); c.stroke(); }
+  for (const q of rig.pf) paintPart(c, J, rig, q, col);
+  for (const s of rig.spikes) if (s[3] === 1) hairShape(c, J, rig, s, col);
+}
+function drawCustom(f, rig, alpha, handles, selected){
+  const J = f.j;
+  ctx.globalAlpha = alpha; paintCustom(ctx, J, rig, f.c);
+  if (handles){
+    ctx.lineWidth = HR / 3; ctx.strokeStyle = "#fff"; ctx.fillStyle = selected ? "#2f6df6" : "#9aa3b5";
+    for (const n of rig.names){ ctx.beginPath(); ctx.arc(J[n][0], J[n][1], HR, 0, 6.2832); ctx.fill(); ctx.stroke(); }
+  }
+  ctx.globalAlpha = 1;
+}
+function drawFigure(f, alpha, handles, selected){
+  if (RIGS[f.t]){ drawCustom(f, RIGS[f.t], alpha, handles, selected); return; }
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = f.c; ctx.lineWidth = LINE_WIDTH; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.beginPath();
+  for (const [a, b] of BONES){ ctx.moveTo(f.j[a][0], f.j[a][1]); ctx.lineTo(f.j[b][0], f.j[b][1]); }
+  ctx.stroke();
+  ctx.fillStyle = CANVAS_BG;                       // head: filled circle hides the neck line inside it
+  ctx.beginPath(); ctx.arc(f.j.head[0], f.j.head[1], HEAD_RADIUS, 0, 6.2832); ctx.fill(); ctx.stroke();
+  drawHead(f);
+  if (handles){                                    // draggable dots (not drawn in exports)
+    ctx.lineWidth = HR / 3; ctx.strokeStyle = "#fff"; ctx.fillStyle = selected ? "#2f6df6" : "#9aa3b5";
+    for (const n of NAMES){ ctx.beginPath(); ctx.arc(f.j[n][0], f.j[n][1], HR, 0, 6.2832); ctx.fill(); ctx.stroke(); }
+  }
+  ctx.globalAlpha = 1;
+}
+/* ---- Impact tools. Special items live in ink[frame] next to pencil strokes, so frames copy/undo/export them for free:
+   {burst:...} = a burst stamp, {fill:1,...} = a bucket fill (a seed point + color), {fx:1,...} = the frame's impact look. ---- */
+function rng(a){ return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function drawBurst(k){
+  const R = rng(k.seed), dx = k.x2 - k.x, dy = k.y2 - k.y, r = Math.hypot(dx, dy) || 1, a0 = Math.atan2(dy, dx), n = k.n, w = k.w, T = 6.2832;
+  ctx.fillStyle = k.c; ctx.strokeStyle = k.c; ctx.lineWidth = 1; ctx.lineJoin = "round"; ctx.beginPath();
+  if (k.burst === "rays"){                              // thin wedges pointing at the center
+    for (let i = 0; i < n; i++){
+      const a = a0 + (i + (R() - .5) * .7) * T / n, ro = r * (.8 + R() * .2), ri = r * (.3 + R() * .2), hw = w * (.5 + R() * .9), ux = Math.cos(a), uy = Math.sin(a);
+      ctx.moveTo(k.x + ux * ri, k.y + uy * ri); ctx.lineTo(k.x + ux * ro - uy * hw, k.y + uy * ro + ux * hw); ctx.lineTo(k.x + ux * ro + uy * hw, k.y + uy * ro - ux * hw); ctx.closePath();
+    }
+  } else if (k.burst === "star"){                       // jagged explosion
+    const m = Math.max(6, Math.round(n * .6));
+    for (let i = 0; i < m * 2; i++){ const a = a0 + i * Math.PI / m, rr = i % 2 ? r * (.4 + R() * .25) : r * (.9 + R() * .15); i ? ctx.lineTo(k.x + Math.cos(a) * rr, k.y + Math.sin(a) * rr) : ctx.moveTo(k.x + Math.cos(a) * rr, k.y + Math.sin(a) * rr); }
+    ctx.closePath();
+  } else if (k.burst === "speed"){                      // parallel streaks along the drag direction
+    const ux = Math.cos(a0), uy = Math.sin(a0);
+    for (let i = 0; i < n; i++){
+      const off = (R() - .5) * r * 1.6, len = r * (.5 + R() * .9), st = (R() - .5) * r * .8, hw = w * (.4 + R() * .7);
+      const cx = k.x - uy * off + ux * st, cy = k.y + ux * off + uy * st;
+      ctx.moveTo(cx - ux * len / 2, cy - uy * len / 2); ctx.lineTo(cx + ux * len / 2 - uy * hw, cy + uy * len / 2 + ux * hw); ctx.lineTo(cx + ux * len / 2 + uy * hw, cy + uy * len / 2 - ux * hw); ctx.closePath();
+    }
+  } else {                                              // slash: a tapered curved cut from start to end
+    const mx = (k.x + k.x2) / 2, my = (k.y + k.y2) / 2, nx = -dy / r, ny = dx / r, bulge = r * .08, th = w * 1.6;
+    ctx.moveTo(k.x, k.y); ctx.quadraticCurveTo(mx + nx * (bulge + th), my + ny * (bulge + th), k.x2, k.y2); ctx.quadraticCurveTo(mx + nx * (bulge - th), my + ny * (bulge - th), k.x, k.y); ctx.closePath();
+  }
+  ctx.fill(); ctx.stroke();
+}
+function burstHit(k, p, r){
+  const dx = k.x2 - k.x, dy = k.y2 - k.y, L = Math.hypot(dx, dy) || 1;
+  if (k.burst === "slash"){ const t = Math.max(0, Math.min(1, ((p[0] - k.x) * dx + (p[1] - k.y) * dy) / (L * L))); return Math.hypot(p[0] - k.x - dx * t, p[1] - k.y - dy * t) < k.w * 2 + r; }
+  return Math.hypot(p[0] - k.x, p[1] - k.y) < L * (k.burst === "speed" ? .8 : 1) + r;
+}
+function drawInk(list, alpha){                     // pencil strokes (and burst stamps)
+  ctx.globalAlpha = alpha; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  for (const k of list){
+    if (k.fx || k.fill) continue;
+    if (k.burst){ drawBurst(k); continue; }
+    ctx.strokeStyle = k.c; ctx.lineWidth = k.w; ctx.beginPath(); ctx.moveTo(k.p[0], k.p[1]);
+    if (k.p.length < 4) ctx.lineTo(k.p[0] + 0.01, k.p[1]);
+    for (let i = 2; i < k.p.length; i += 2) ctx.lineTo(k.p[i], k.p[i+1]);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
+/* ---- Bucket fill: finds the region under a seed point in a clean copy of the frame, then paints it with Multiply (lines stay on top). ---- */
+const scv = document.createElement("canvas"); scv.width = CANVAS_W; scv.height = CANVAS_H;
+const sctx = scv.getContext("2d", {willReadFrequently: true});
+const fillCache = new Map();                          // frame number -> {sig, cv, masks, fl}
+const hexRgb = h => { const m = /^#([0-9a-f]{6})$/i.exec(h || ""); const v = m ? parseInt(m[1], 16) : 0; return [v >> 16, v >> 8 & 255, v & 255]; };
+function floodRegion(d, W, H, sx, sy, tol){
+  const mask = new Uint8Array(W * H), i0 = (sy * W + sx) * 4, r0 = d[i0], g0 = d[i0 + 1], b0 = d[i0 + 2];
+  const ok = i => { const j = i * 4; return Math.abs(d[j] - r0) <= tol && Math.abs(d[j + 1] - g0) <= tol && Math.abs(d[j + 2] - b0) <= tol; };
+  const st = [sx, sy];
+  while (st.length){
+    const y = st.pop(); let x = st.pop();
+    while (x >= 0 && !mask[y * W + x] && ok(y * W + x)) x--;
+    x++; let up = false, dn = false;
+    while (x < W && !mask[y * W + x] && ok(y * W + x)){
+      mask[y * W + x] = 1;
+      if (y > 0){ const o = (y - 1) * W + x, can = !mask[o] && ok(o); if (can && !up){ st.push(x, y - 1); up = true; } else if (!can) up = false; }
+      if (y < H - 1){ const o = (y + 1) * W + x, can = !mask[o] && ok(o); if (can && !dn){ st.push(x, y + 1); dn = true; } else if (!can) dn = false; }
+      x++;
+    }
+  }
+  return {mask, r0, g0, b0};
+}
+function growMask(mask, d, W, H, r0, g0, b0, tol){    // 2 px into the line edge so no light halo is left (only into pixels that differ from the filled color)
+  for (let pass = 0; pass < 2; pass++){
+    const add = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++){
+      const i = y * W + x; if (mask[i]) continue;
+      if (!((x > 0 && mask[i - 1]) || (x < W - 1 && mask[i + 1]) || (y > 0 && mask[i - W]) || (y < H - 1 && mask[i + W]))) continue;
+      const j = i * 4; if (Math.abs(d[j] - r0) > tol || Math.abs(d[j + 1] - g0) > tol || Math.abs(d[j + 2] - b0) > tol) add.push(i);
+    }
+    for (const i of add) mask[i] = 1;
+  }
+}
+function fillEntry(i){
+  const list = ink[i] || [], fills = list.filter(k => k.fill); if (!fills.length) return null;
+  const sig = JSON.stringify([list.filter(k => !k.fill && !k.fx), frames[i].map(f => [f.t, f.c, f.j]), fills]), old = fillCache.get(i);
+  if (old && old.sig === sig){ fillCache.delete(i); fillCache.set(i, old); return old; }
+  const keep = ctx, W = CANVAS_W, H = CANVAS_H;
+  ctx = sctx; sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.globalAlpha = 1; sctx.fillStyle = CANVAS_BG; sctx.fillRect(0, 0, W, H);
+  drawInk(list, 1); frames[i].forEach(f => drawFigure(f, 1, false, false)); ctx = keep;
+  const d = sctx.getImageData(0, 0, W, H).data, out = new ImageData(W, H), od = out.data, masks = [];
+  for (const k of fills){
+    let sx = Math.min(W - 1, Math.max(0, Math.round(k.x))), sy = Math.min(H - 1, Math.max(0, Math.round(k.y)));
+    let j = (sy * W + sx) * 4;
+    if (d[j] * .3 + d[j + 1] * .59 + d[j + 2] * .11 < 110){   // tapped right on a dark line: use the nearest light spot beside it
+      let found = false;
+      for (let r = 1; r <= 6 && !found; r++) for (let dy = -r; dy <= r && !found; dy++) for (let dx = -r; dx <= r && !found; dx++){
+        const x = sx + dx, y = sy + dy; if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        const q = (y * W + x) * 4; if (d[q] * .3 + d[q + 1] * .59 + d[q + 2] * .11 > 190){ sx = x; sy = y; found = true; }
+      }
+      if (!found){ masks.push(new Uint8Array(W * H)); continue; }
+    }
+    const tol = Math.max(1, +k.t || 48), res = floodRegion(d, W, H, sx, sy, tol);
+    growMask(res.mask, d, W, H, res.r0, res.g0, res.b0, tol); masks.push(res.mask);
+    const c = hexRgb(k.c); for (let q = 0; q < W * H; q++) if (res.mask[q]){ od[q * 4] = c[0]; od[q * 4 + 1] = c[1]; od[q * 4 + 2] = c[2]; od[q * 4 + 3] = 255; }
+  }
+  const cv2 = old ? old.cv : document.createElement("canvas"); cv2.width = W; cv2.height = H; cv2.getContext("2d").putImageData(out, 0, 0);
+  const e = {sig, cv: cv2, masks, fl: fills}; fillCache.delete(i); fillCache.set(i, e);
+  if (fillCache.size > 8) fillCache.delete(fillCache.keys().next().value);
+  return e;
+}
+/* ---- Impact look for a frame: invert, or turn it into two flat colors (dark parts -> line color, light parts -> paper color) ---- */
+const fxOf = i => (ink[i] || []).find(k => k.fx) || null;
+function lookPass(f){
+  const im = ectx.getImageData(0, 0, CANVAS_W, CANVAS_H), d = im.data;
+  if (f.look === "invert"){ for (let i = 0; i < d.length; i += 4){ d[i] = 255 - d[i]; d[i + 1] = 255 - d[i + 1]; d[i + 2] = 255 - d[i + 2]; } }
+  else {
+    const fg = hexRgb(f.fg), bg = hexRgb(f.bg), th = f.th || 128;
+    for (let i = 0; i < d.length; i += 4){ const c = (d[i] * .299 + d[i + 1] * .587 + d[i + 2] * .114) < th ? fg : bg; d[i] = c[0]; d[i + 1] = c[1]; d[i + 2] = c[2]; }
+  }
+  ectx.putImageData(im, 0, 0);
+}
+function handlesOverlay(){
+  frames[cur].forEach((f, i) => {
+    const J = f.j; ctx.lineWidth = HR / 3; ctx.strokeStyle = "#fff"; ctx.fillStyle = i === sel ? "#2f6df6" : "#9aa3b5";
+    for (const n of rigOf(f).names){ ctx.beginPath(); ctx.arc(J[n][0], J[n][1], HR, 0, 6.2832); ctx.fill(); ctx.stroke(); }
+  });
+}
+function sceneRaw(handles, fx){                       // draws the current animation frame
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, CANVAS_W, CANVAS_H); ctx.clip();
+  ctx.fillStyle = CANVAS_BG; ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  if (ctx === vctx) drawRef();                        // reference video: editor view only, never exported
+  if (fx && (fx.shake || (fx.zoom && fx.zoom !== 100))){   // camera punch: shake + zoom into the middle
+    const R = rng(cur * 977 + 13), sh = fx.shake || 0, z = (fx.zoom || 100) / 100;
+    ctx.translate(CANVAS_W / 2 + (R() - .5) * 2 * sh, CANVAS_H / 2 + (R() - .5) * 2 * sh); ctx.scale(z, z); ctx.translate(-CANVAS_W / 2, -CANVAS_H / 2);
+  }
+  if (onion && handles && cur > 0){ drawInk(ink[cur-1], 0.22); frames[cur-1].forEach(f => drawFigure(f, 0.22, false, false)); }
+  drawInk(ink[cur], 1);
+  frames[cur].forEach(f => drawFigure(f, 1, false, false));
+  const fe = fillEntry(cur);
+  if (fe){ ctx.globalCompositeOperation = "multiply"; ctx.drawImage(fe.cv, 0, 0); ctx.globalCompositeOperation = "source-over"; }
+  if (handles) handlesOverlay();
+  ctx.restore();
+}
+function scene(handles){
+  const fx = fxOf(cur);
+  if (!fx){ sceneRaw(handles, null); return; }
+  const live = handles ? Object.assign({}, fx, {shake: 0, zoom: 100}) : fx;   // while editing, shake/zoom stay off so the dots line up
+  if (!fx.look){ sceneRaw(handles, live); return; }
+  if (ctx === ectx){ sceneRaw(false, live); lookPass(fx); return; }
+  const keep = ctx; ctx = ectx; ectx.setTransform(1, 0, 0, 1, 0, 0); sceneRaw(false, live); lookPass(fx); ctx = keep;
+  ctx.drawImage(ex, 0, 0); if (handles) handlesOverlay();
+}
+let stageColor = "#17191e";
+const dpr = () => Math.min(window.devicePixelRatio || 1, 2);   // capped at 2 to stay fast on weak devices
+function render(handles){
+  if (handles === undefined) handles = !playing && !busy;
+  refSeek(); ctx = vctx; const d = dpr(); HR = 6 / view.z;
+  vctx.setTransform(1, 0, 0, 1, 0, 0); vctx.fillStyle = stageColor; vctx.fillRect(0, 0, cv.width, cv.height);
+  vctx.setTransform(view.z*d, 0, 0, view.z*d, view.x*d, view.y*d);
+  scene(handles);
+}
+function renderExport(){ ctx = ectx; ectx.setTransform(1, 0, 0, 1, 0, 0); HR = 6; scene(false); ctx = vctx; }
+
+/* ---- Reference video (editor only: shown behind the drawing, not saved in PNG/video exports) ---- */
+let ref = null, refDragging = null;                   // ref = {el, url, on, op, sc, x, y, st, drag}
+function drawRef(){
+  if (!ref || !ref.on || ref.el.readyState < 2 || !ref.el.videoWidth) return;
+  const vw = ref.el.videoWidth, vh = ref.el.videoHeight, s = Math.min(CANVAS_W / vw, CANVAS_H / vh) * ref.sc, w = vw * s, h = vh * s;
+  ctx.save(); ctx.globalAlpha = ref.op;
+  ctx.drawImage(ref.el, (CANVAS_W - w) / 2 + ref.x, (CANVAS_H - h) / 2 + ref.y, w, h);
+  ctx.restore();
+}
+const refTime = i => refT[i] != null ? refT[i] : ref.st + i / fps;   // manual time if you set one, otherwise start + frame / fps
+const refClamp = t => Math.max(0, Math.min(ref.el.duration - 0.001, t));
+function refUI(){                                     // keep the Frame time controls showing the current frame
+  const t = refClamp(refTime(cur)), n = $("refTn");
+  $("refT").max = ref.el.duration; $("refT").value = t;
+  if (document.activeElement !== n) n.value = t.toFixed(2);
+  $("refMode").textContent = refT[cur] != null ? "manual" : "auto";
+}
+function refSeek(){                                   // video follows the frames
+  if (!ref || !(ref.el.duration > 0)) return;
+  refUI();
+  if (!ref.on) return;
+  const t = refClamp(refTime(cur));
+  if (Math.abs(ref.el.currentTime - t) > 0.0005) ref.el.currentTime = t;
+}
+function refSync(){                                   // put the control values on screen
+  $("refOn").checked = ref.on; $("refOp").value = Math.round(ref.op * 100); $("refSc").value = Math.round(ref.sc * 100);
+  $("refX").value = Math.round(ref.x); $("refY").value = Math.round(ref.y); $("refSt").value = ref.st;
+  $("refDrag").className = ref.drag ? "on" : "";
+}
+function refClear(){
+  if (!ref) return;
+  ref.el.onseeked = ref.el.onloadeddata = null; ref.el.pause(); ref.el.removeAttribute("src"); ref.el.load(); ref.el.remove();
+  URL.revokeObjectURL(ref.url); ref = null; refDragging = null; $("grpRef").hidden = true; $("grpRefT").hidden = true; buildStrip(); $("bRef").textContent = "\uD83C\uDFAC Reference video";
+}
+function refLoad(file){
+  refClear();
+  const el = document.createElement("video");
+  el.muted = true; el.playsInline = true; el.preload = "auto"; el.setAttribute("playsinline", "");
+  el.style.cssText = "position:fixed;width:2px;height:2px;opacity:0;pointer-events:none;left:0;top:0";
+  document.body.appendChild(el);
+  ref = {el, url: URL.createObjectURL(file), on: true, op: 0.5, sc: 1, x: 0, y: 0, st: 0, drag: false};
+  el.onloadeddata = () => { refSeek(); render(); say("Reference video loaded. It follows your frames: frame 1 = start time, then one step per frame at your fps."); };
+  el.onseeked = () => render();
+  el.onerror = () => { say("This video could not be opened. Try an MP4 or WebM file."); refClear(); };
+  el.src = ref.url; el.load();
+  $("grpRef").hidden = false; $("grpRefT").hidden = false; $("bRef").textContent = "\uD83C\uDFAC Change video"; refSync();
+}
+$("bRef").onclick = () => $("refIn").click();
+$("refIn").onchange = e => { const f = e.target.files[0]; e.target.value = ""; if (f) refLoad(f); };
+$("refOn").onchange = e => { if (!ref) return; ref.on = e.target.checked; refSeek(); render(); };
+$("refOp").oninput = e => { if (ref){ ref.op = +e.target.value / 100; render(); } };
+$("refSc").oninput = e => { if (ref){ ref.sc = +e.target.value / 100; render(); } };
+$("refX").oninput = e => { if (ref){ ref.x = +e.target.value; render(); } };
+$("refY").oninput = e => { if (ref){ ref.y = +e.target.value; render(); } };
+$("refSt").onchange = e => { if (ref){ ref.st = Math.max(0, +e.target.value || 0); e.target.value = ref.st; refSeek(); render(); } };
+$("refDrag").onclick = () => { if (!ref) return; ref.drag = !ref.drag; refSync(); say(ref.drag ? "Drag on the canvas to move the video. Press Drag video again to go back to drawing." : "Drag video is off."); };
+$("refReset").onclick = () => { if (!ref) return; ref.op = 0.5; ref.sc = 1; ref.x = 0; ref.y = 0; ref.st = 0; refSync(); refSeek(); render(); };
+let tSliding = false;
+function refSetT(t, quiet){                           // set the video time of the current frame by hand
+  if (!ref || playing || busy || !(ref.el.duration > 0)) return;
+  if (!quiet) snap();
+  const was = refT[cur] != null; refT[cur] = refClamp(t);
+  refSeek(); render(); if (!was) buildStrip();
+}
+$("refT").oninput = e => {
+  if (!ref || playing || busy) return;
+  if (!tSliding){ snap(); tSliding = true; }
+  refSetT(+e.target.value, true);
+};
+$("refT").onchange = () => { tSliding = false; };
+$("refTn").onchange = e => { if (ref && e.target.value !== "") refSetT(+e.target.value); else if (ref) refUI(); };
+$("refPrev").onclick = () => { if (ref) refSetT(refClamp(refTime(cur)) - 1 / 30); };
+$("refNext").onclick = () => { if (ref) refSetT(refClamp(refTime(cur)) + 1 / 30); };
+$("refAuto").onclick = () => { if (!ref || playing || busy || refT[cur] == null) return; snap(); refT[cur] = null; refSeek(); render(); buildStrip(); };
+$("refAutoAll").onclick = () => { if (!ref || playing || busy || !refT.some(v => v != null)) return; snap(); refT = frames.map(() => null); refSeek(); render(); buildStrip(); say("All frames are back on automatic timing."); };
+$("refRm").onclick = () => { refClear(); render(); say("Reference video removed."); };
+
+/* ---- Zoom and pan ---- */
+function showZoom(){ $("zoomv").textContent = Math.round(view.z * 100) + "%"; }
+function zoomAt(f, sx, sy){
+  const z = Math.min(8, Math.max(0.1, view.z * f)), k = z / view.z;
+  view.x = sx - (sx - view.x) * k; view.y = sy - (sy - view.y) * k; view.z = z; showZoom(); render();
+}
+function zoomBtn(f){ const r = stage.getBoundingClientRect(); zoomAt(f, r.width/2, r.height/2); }
+function fit(){
+  const r = stage.getBoundingClientRect();
+  view.z = Math.min(r.width / CANVAS_W, r.height / CANVAS_H) * 0.92;
+  view.x = (r.width - CANVAS_W * view.z) / 2; view.y = (r.height - CANVAS_H * view.z) / 2; showZoom(); render();
+}
+let fitted = false;
+function resize(){
+  const d = dpr(), r = stage.getBoundingClientRect();
+  cv.width = Math.max(1, Math.round(r.width * d)); cv.height = Math.max(1, Math.round(r.height * d));
+  stageColor = getComputedStyle(document.documentElement).getPropertyValue("--stage").trim() || stageColor;
+  if (!fitted){ fitted = true; fit(); } else render();
+}
+if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+addEventListener("resize", resize);
+if (matchMedia) matchMedia("(prefers-color-scheme: dark)").addEventListener("change", resize);
+
+/* ---- Frame strip ---- */
+function buildStrip(){
+  const s = $("strip"); s.textContent = "";
+  frames.forEach((_, i) => {
+    const b = document.createElement("button");
+    b.textContent = (i + 1) + (fxOf(i) ? "\u26A1" : "") + (ref && refT[i] != null ? "\u2022" : ""); if (i === cur) b.className = "on";
+    b.onclick = () => { if (!playing && !busy){ cur = i; refresh(); } };
+    s.appendChild(b);
+  });
+  markActive();
+}
+function markActive(){
+  [...$("strip").children].forEach((b, i) => b.className = i === cur ? "on" : "");
+  const b = $("strip").children[cur]; if (b) b.scrollIntoView({block: "nearest", inline: "nearest"});
+}
+function refresh(){ buildStrip(); render(); syncFx(); }
+
+/* ---- Tools ---- */
+const tools = document.querySelectorAll(".t[data-tool]");
+function setTool(t){
+  tool = t; cv.dataset.tool = t;
+  tools.forEach(b => b.classList.toggle("on", b.dataset.tool === t));
+  $("grpFill").hidden = t !== "fill"; $("grpBurst").hidden = t !== "burst";
+  say({pose: "Pose: drag a dot to move a joint.", pencil: "Pencil: draw on this frame. Pick color and size in the top bar.",
+       eraser: "Eraser: touch a pencil line, burst or fill to delete it.",
+       fill: "Fill bucket: tap a closed area to fill it with the pen color. Tune Fill tolerance in the top bar.",
+       burst: "Burst: drag to stamp impact lines. Pick the style and amount in the top bar.", hand: "Move: drag to pan. Scroll or pinch to zoom."}[t]);
+}
+tools.forEach(b => b.onclick = () => setTool(b.dataset.tool));
+
+/* ---- Mouse / touch on the canvas ---- */
+const pts = new Map();                // active pointers (two fingers = pinch zoom)
+let pinch = null, panning = null, stroke = null, burstItem = null, erased = false, spaceDown = false;
+const sp = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };   // screen position
+const pos = e => { const s = sp(e); return [(s[0] - view.x) / view.z, (s[1] - view.y) / view.z]; };         // position on the drawing
+function eraseAt(p){
+  const r = 12 / view.z, list = ink[cur];
+  for (let i = list.length - 1; i >= 0; i--){
+    const k = list[i]; let hit = false;
+    if (k.fx) continue;
+    if (k.fill){
+      const e = fillEntry(cur), j = e ? e.fl.indexOf(k) : -1, x = Math.round(p[0]), y = Math.round(p[1]);
+      hit = j >= 0 && x >= 0 && y >= 0 && x < CANVAS_W && y < CANVAS_H && e.masks[j][y * CANVAS_W + x] === 1;
+    } else if (k.burst) hit = burstHit(k, p, r);
+    else { const q = k.p, rr = r + k.w / 2; for (let n = 0; n < q.length; n += 2) if ((q[n]-p[0])**2 + (q[n+1]-p[1])**2 < rr*rr){ hit = true; break; } }
+    if (hit){ if (!erased){ snap(); erased = true; } list.splice(i, 1); render(); break; }
+  }
+}
+cv.addEventListener("pointerdown", e => {
+  if (e.button === 2) return;                         // right-click opens the quick menu instead
+  cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, sp(e));
+  if (pts.size === 2){                // second finger: switch to pinch zoom
+    drag = null; stroke = null; burstItem = null; panning = null;
+    const [a, b] = [...pts.values()];
+    pinch = {d: Math.hypot(a[0]-b[0], a[1]-b[1]) || 1, c: [(a[0]+b[0])/2, (a[1]+b[1])/2]}; return;
+  }
+  if (pts.size > 2) return;
+  if (e.button === 1 || tool === "hand" || spaceDown){ panning = {last: sp(e)}; return; }
+  if (playing || busy) return;
+  const p = pos(e);
+  if (ref && ref.drag && ref.on){ refDragging = {last: p}; return; }   // "Drag video" is on: move the video instead of drawing
+  if (tool === "pose"){
+    let best = null, bd = (26 / view.z) ** 2;          // how close you must tap to grab a dot
+    frames[cur].forEach((f, i) => { for (const n of rigOf(f).names){
+      const d = (f.j[n][0]-p[0])**2 + (f.j[n][1]-p[1])**2;
+      if (d < bd){ bd = d; best = {i, n}; }
+    }});
+    if (!best) return;
+    snap(); sel = best.i;
+    const jt = frames[cur][best.i].j[best.n];
+    drag = {i: best.i, n: best.n, off: [jt[0]-p[0], jt[1]-p[1]]};   // keeps the grab point from jumping
+    render();
+  } else if (tool === "pencil"){
+    snap(); stroke = {c: $("penColor").value, w: +$("penSize").value, p: [p[0], p[1]]}; ink[cur].push(stroke); render();
+  } else if (tool === "fill"){
+    snap(); ink[cur].push({fill: 1, x: p[0], y: p[1], c: $("penColor").value, t: +$("fillTol").value}); render();
+  } else if (tool === "burst"){
+    snap(); burstItem = {burst: $("burstStyle").value, x: p[0], y: p[1], x2: p[0], y2: p[1], c: $("penColor").value, w: Math.max(1, +$("penSize").value), n: +$("burstN").value, seed: Math.floor(Math.random() * 1e9)};
+    ink[cur].push(burstItem); render();
+  } else if (tool === "eraser"){ erased = false; eraseAt(p); }
+});
+cv.addEventListener("pointermove", e => {
+  if (!pts.has(e.pointerId)) return;
+  pts.set(e.pointerId, sp(e));
+  if (pts.size === 2 && pinch){
+    const [a, b] = [...pts.values()], d = Math.hypot(a[0]-b[0], a[1]-b[1]) || 1, c = [(a[0]+b[0])/2, (a[1]+b[1])/2];
+    view.x += c[0] - pinch.c[0]; view.y += c[1] - pinch.c[1];
+    zoomAt(d / pinch.d, c[0], c[1]); pinch = {d, c}; return;
+  }
+  if (panning){ const s = sp(e); view.x += s[0]-panning.last[0]; view.y += s[1]-panning.last[1]; panning.last = s; render(); return; }
+  if (refDragging){ const p = pos(e); ref.x += p[0] - refDragging.last[0]; ref.y += p[1] - refDragging.last[1]; refDragging.last = p; refSync(); render(); return; }
+  if (drag){ const p = pos(e); moveJoint(frames[cur][drag.i], drag.n, [p[0]+drag.off[0], p[1]+drag.off[1]]); render(); }
+  else if (burstItem){ const p = pos(e); burstItem.x2 = p[0]; burstItem.y2 = p[1]; render(); }
+  else if (stroke){
+    const p = pos(e), n = stroke.p.length;
+    if (Math.hypot(p[0]-stroke.p[n-2], p[1]-stroke.p[n-1]) * view.z > 2){ stroke.p.push(p[0], p[1]); render(); }   // skip tiny moves = faster
+  } else if (tool === "eraser" && e.buttons) eraseAt(pos(e));
+});
+function endPtr(e){ refDragging = null; pts.delete(e.pointerId); if (pts.size < 2) pinch = null; panning = null;
+  if (burstItem){ if (Math.hypot(burstItem.x2 - burstItem.x, burstItem.y2 - burstItem.y) < 12){ burstItem.x2 = burstItem.x + 90; render(); } burstItem = null; } drag = null; stroke = null; erased = false; }
+cv.addEventListener("pointerup", endPtr); cv.addEventListener("pointercancel", endPtr);
+cv.addEventListener("wheel", e => { e.preventDefault(); const s = sp(e); zoomAt(e.deltaY < 0 ? 1.12 : 1/1.12, s[0], s[1]); }, {passive: false});
+
+/* ---- Buttons ---- */
+function undo(){
+  if (!history.length || playing || busy) return;
+  const s = JSON.parse(history.pop()); frames = s.frames; ink = s.ink; cur = s.cur; sel = s.sel;
+  refT = Array.isArray(s.refT) && s.refT.length === s.frames.length ? s.refT : s.frames.map(() => null); refresh();
+}
+$("bUndo").onclick = undo;
+$("bZin").onclick = () => zoomBtn(1.25); $("bZout").onclick = () => zoomBtn(1/1.25); $("bFit").onclick = fit;
+$("bAddF").onclick = () => {
+  if (playing || busy) return; snap();
+  frames.splice(cur+1, 0, clone(frames[cur])); ink.splice(cur+1, 0, clone(ink[cur]).filter(k => !k.fx)); refT.splice(cur+1, 0, refT[cur] != null ? refT[cur] + 1 / fps : null); cur++; refresh();
+};
+$("bDelF").onclick = () => {
+  if (playing || busy || frames.length < 2) return;
+  snap(); frames.splice(cur, 1); ink.splice(cur, 1); refT.splice(cur, 1); cur = Math.min(cur, frames.length-1); refresh();
+};
+$("bAddP").onclick = () => {                           // adds a figure to every frame so animation stays consistent
+  if (playing || busy) return; snap();
+  const n = frames[0].length, type = $("charSel").value, off = 60 * n;
+  frames.forEach(fr => fr.push(makeFigure(CANVAS_W/2 + (n % 2 ? off : -off), CANVAS_H/2 - 10, type)));
+  sel = n; refresh();
+};
+$("bDelP").onclick = () => {
+  if (playing || busy || frames[0].length < 2) return; snap();
+  frames.forEach(fr => fr.splice(sel, 1)); sel = 0; refresh();
+};
+for (const k in CHARS){ const o = document.createElement("option"); o.value = k; o.textContent = CHARS[k].label; $("charSel").appendChild(o); }
+$("bStyle").onclick = () => {                          // changes the selected figure's look in every frame
+  if (playing || busy) return;
+  const t = $("charSel").value;
+  if (RIGS[frames[0][sel].t]){ snap(); frames.forEach(fr => fr[sel].c = $("penColor").value); render(); say("Custom figure: its line color now matches the pen color."); return; }
+  if (RIGS[t]){ say("A custom figure has its own shape. Use Add fig to place it."); return; }
+  snap();
+  frames.forEach(fr => { fr[sel].t = t; fr[sel].c = CHARS[t].color; });
+  render();
+};
+/* ---- Impact look controls ---- */
+const FXP = {bw: ["#000000", "#ffffff"], wb: ["#ffffff", "#000000"], br: ["#000000", "#e5322d"], wr: ["#ffffff", "#e5322d"], rb: ["#e5322d", "#000000"], by: ["#000000", "#ffd21f"], yb: ["#ffd21f", "#000000"]};
+let fxSliding = false;
+function syncFx(){
+  const k = fxOf(cur) || {look: "", fg: "#000000", bg: "#ffffff", th: 128, shake: 0, zoom: 100};
+  $("fxLook").value = !k.look ? "none" : k.look === "invert" ? "invert" : (Object.keys(FXP).find(n => FXP[n][0] === k.fg && FXP[n][1] === k.bg) || "custom");
+  $("fxFg").value = k.fg; $("fxBg").value = k.bg; $("fxTh").value = k.th; $("fxShake").value = k.shake; $("fxZoom").value = k.zoom;
+}
+function patchFx(p){
+  if (playing || busy) return;
+  if (!fxSliding){ snap(); fxSliding = true; }
+  let k = fxOf(cur);
+  if (!k){ k = {fx: 1, look: "", fg: "#000000", bg: "#ffffff", th: 128, shake: 0, zoom: 100}; ink[cur].push(k); }
+  Object.assign(k, p);
+  if (!k.look && !k.shake && k.zoom === 100) ink[cur].splice(ink[cur].indexOf(k), 1);
+  buildStrip(); render();
+}
+$("fxLook").onchange = () => {
+  const v = $("fxLook").value; fxSliding = false;
+  if (v === "none") patchFx({look: ""}); else if (v === "invert") patchFx({look: "invert"});
+  else if (v === "custom") patchFx({look: "duo", fg: $("fxFg").value, bg: $("fxBg").value});
+  else { patchFx({look: "duo", fg: FXP[v][0], bg: FXP[v][1]}); $("fxFg").value = FXP[v][0]; $("fxBg").value = FXP[v][1]; }
+  fxSliding = false;
+};
+$("fxFg").oninput = $("fxBg").oninput = () => { patchFx({look: "duo", fg: $("fxFg").value, bg: $("fxBg").value}); $("fxLook").value = "custom"; };
+$("fxTh").oninput = () => patchFx({th: +$("fxTh").value});
+$("fxShake").oninput = () => patchFx({shake: +$("fxShake").value});
+$("fxZoom").oninput = () => patchFx({zoom: +$("fxZoom").value});
+for (const id of ["fxFg", "fxBg", "fxTh", "fxShake", "fxZoom"]) $(id).onchange = () => { fxSliding = false; };
+$("bImpact").onclick = () => {                         // copy this frame as a one-tap flash frame: white lines on black, a little shake and zoom
+  if (playing || busy) return; snap();
+  frames.splice(cur + 1, 0, clone(frames[cur]));
+  ink.splice(cur + 1, 0, clone(ink[cur]).filter(k => !k.fx).concat([{fx: 1, look: "duo", fg: "#ffffff", bg: "#000000", th: 128, shake: 6, zoom: 108}]));
+  refT.splice(cur + 1, 0, refT[cur]); cur++; fxSliding = false; refresh(); say("Impact frame added. Change its look, shake and zoom in the Impact bar, or add a Burst.");
+};
+$("bOnion").onclick = () => { onion = !onion; $("bOnion").className = onion ? "on" : ""; render(); };
+$("bMode").onclick = () => {
+  rigid = !rigid; $("bMode").className = rigid ? "on" : ""; $("bMode").textContent = rigid ? "Rigid bones" : "Rubber";
+  say(rigid ? "Rigid: bones keep their length and joints follow naturally." : "Rubber: bones stretch when you pull a joint.");
+};
+$("bIK").onclick = () => {
+  ik = !ik; $("bIK").className = ik ? "on" : ""; $("bIK").textContent = ik ? "IK bones" : "FK bones";
+  say(ik ? "IK on: drag a hand or foot and the elbow or knee follows." : "IK off (FK): dragging a hand or foot swings just that bone. Drag the elbow or knee to bend a limb.");
+};
+$("fps").oninput = e => { fps = +e.target.value; $("fpsv").textContent = fps; };
+$("fps").value = DEFAULT_FPS; $("fpsv").textContent = DEFAULT_FPS;
+
+/* ---- Playback (only redraws when the frame changes) ---- */
+let lastT = 0;
+function loop(t){
+  if (!playing) return;
+  if (t - lastT >= 1000 / fps){ lastT = t; cur = (cur + 1) % frames.length; render(false); markActive(); }
+  requestAnimationFrame(loop);
+}
+function togglePlay(){
+  if (busy) return;
+  playing = !playing; $("bPlay").textContent = playing ? "Stop" : "Play";
+  if (playing){ lastT = performance.now(); requestAnimationFrame(loop); } else render();
+}
+$("bPlay").onclick = togglePlay;
+
+/* ---- Saving files ---- */
+function saveFile(name, blob){
+  if (saver){ saver.save({filename: name, data: blob}).catch(() => say("Save cancelled.")); return; }
+  const a = document.createElement("a");               // fallback when opened as a normal local file
+  a.href = URL.createObjectURL(blob); a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+if (window.claude && claude.use){ claude.use("downloads").then(d => { saver = d; }).catch(() => {}); }
+$("bPng").onclick = () => {
+  if (playing || busy) return;
+  renderExport(); ex.toBlob(b => saveFile(EXPORT_NAME + "-frame" + (cur+1) + ".png", b));
+};
+$("bVid").onclick = () => {
+  if (busy) return;
+  const type = window.MediaRecorder && ex.captureStream &&
+    ["video/webm;codecs=vp9", "video/webm"].find(t => MediaRecorder.isTypeSupported(t));
+  if (!type){ say("Video saving isn't supported on this device. Use Save PNG instead."); return; }
+  if (playing) togglePlay();
+  busy = true; say("Recording video...");
+  const rec = new MediaRecorder(ex.captureStream(fps), {mimeType: type}), chunks = [];
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    busy = false; render(); say("Done.");
+    saveFile(EXPORT_NAME + ".webm", new Blob(chunks, {type: "video/webm"}));
+  };
+  rec.start(); let i = 0;
+  (function step(){
+    cur = i; renderExport(); markActive(); render(false);
+    if (++i < frames.length) setTimeout(step, 1000 / fps); else setTimeout(() => rec.stop(), 1000 / fps);
+  })();
+};
+
+/* ---- Settings: layout and shortcuts (remembered on this device when the browser allows it) ---- */
+let settings = {layout: DEFAULT_LAYOUT, keys: {}, palette: null, figures: [], theme: "auto"};
+try { Object.assign(settings, JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}")); } catch (e) {}
+function saveSettings(){ try { localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); } catch (e) {} }
+
+/* ---- Color themes (UI only; the animation's own background is not changed). Add a line to make your own. ---- */
+const THEMES = {   // bg = window, panel = bars/buttons area, ink = text, mute = soft text, line = borders, accent = highlight, stage = area around the canvas, onacc = text on accent
+  auto:     {label: "Auto (system)"},
+  light:    {label: "Light",               dark: 0, bg: "#e9ebef", panel: "#f6f7f9", ink: "#20242c", mute: "#6a7282", line: "#cfd3db", accent: "#2f6df6", stage: "#cdd1d9", onacc: "#fff"},
+  dark:     {label: "Dark",                dark: 1, bg: "#23262d", panel: "#2b2f37", ink: "#dfe3ea", mute: "#8f98a8", line: "#3a3f4a", accent: "#5b8cff", stage: "#17191e", onacc: "#fff"},
+  deep:     {label: "Deep dark",           dark: 1, bg: "#0a0a0c", panel: "#121215", ink: "#e6e6ea", mute: "#85858f", line: "#26262c", accent: "#6d7cff", stage: "#000000", onacc: "#fff"},
+  yellow:   {label: "Yellow & deep dark",  dark: 1, bg: "#0b0b0b", panel: "#141414", ink: "#f3ecd0", mute: "#9a9266", line: "#2e2a14", accent: "#ffd21f", stage: "#000000", onacc: "#111"},
+  blue:     {label: "Black & bright blue", dark: 1, bg: "#050608", panel: "#0d1016", ink: "#e8f0ff", mute: "#7d8aa6", line: "#1b2433", accent: "#1f8bff", stage: "#000000", onacc: "#fff"},
+  green:    {label: "Black & neon green",  dark: 1, bg: "#050806", panel: "#0c120e", ink: "#e2ffe9", mute: "#74927b", line: "#16281c", accent: "#2bff88", stage: "#000000", onacc: "#04140a"},
+  red:      {label: "Black & red",         dark: 1, bg: "#080505", panel: "#120b0b", ink: "#ffe9e7", mute: "#a07a77", line: "#2a1616", accent: "#ff3b3b", stage: "#000000", onacc: "#fff"},
+  purple:   {label: "Midnight purple",     dark: 1, bg: "#1a1530", panel: "#241d42", ink: "#ece6ff", mute: "#9a90c4", line: "#3a3066", accent: "#a56bff", stage: "#110d22", onacc: "#fff"},
+  ocean:    {label: "Ocean",               dark: 1, bg: "#0e2230", panel: "#143044", ink: "#e3f4ff", mute: "#7fa6bd", line: "#21465f", accent: "#2bd0e0", stage: "#08161f", onacc: "#04202a"},
+  sepia:    {label: "Paper (warm)",        dark: 0, bg: "#efe6d3", panel: "#f8f1e1", ink: "#3b3022", mute: "#8a7a62", line: "#d8cbb0", accent: "#c0622b", stage: "#ddd0b5", onacc: "#fff"},
+  mint:     {label: "Mint light",          dark: 0, bg: "#e3f1ec", panel: "#f1faf6", ink: "#1b3329", mute: "#6a8a7c", line: "#c4ddd2", accent: "#14a37f", stage: "#cfe4db", onacc: "#fff"}
+};
+function applyTheme(){
+  const t = THEMES[settings.theme] || THEMES.auto, st = document.documentElement.style;
+  for (const k of ["bg", "panel", "ink", "mute", "line", "accent", "stage", "onacc"]) { if (t.bg) st.setProperty("--" + k, t[k]); else st.removeProperty("--" + k); }
+  st.colorScheme = t.bg ? (t.dark ? "dark" : "light") : "";
+  document.documentElement.removeAttribute("data-theme");
+}
+
+// Every action that can have a shortcut. "run" is what happens. Add a line here (and in DEFAULT_KEYS) for a new action.
+const ACTIONS = {
+  pose:      {label: "Pose tool",       run: () => setTool("pose")},
+  pencil:    {label: "Pencil tool",     run: () => setTool("pencil")},
+  eraser:    {label: "Eraser tool",     run: () => setTool("eraser")},
+  fill:      {label: "Fill bucket",     run: () => setTool("fill")},
+  burst:     {label: "Impact burst",    run: () => setTool("burst")},
+  hand:      {label: "Move view",       run: () => setTool("hand")},
+  undo:      {label: "Undo",            run: () => undo()},
+  zoomIn:    {label: "Zoom in",         run: () => zoomBtn(1.25)},
+  zoomOut:   {label: "Zoom out",        run: () => zoomBtn(1/1.25)},
+  fit:       {label: "Fit to screen",   run: () => fit()},
+  play:      {label: "Play / stop",     run: () => togglePlay()},
+  prevFrame: {label: "Previous frame",  run: () => { if (!playing && !busy && cur > 0){ cur--; refresh(); } }},
+  nextFrame: {label: "Next frame",      run: () => { if (!playing && !busy && cur < frames.length - 1){ cur++; refresh(); } }},
+  addFrame:  {label: "Add frame",       run: () => $("bAddF").onclick()},
+  delFrame:  {label: "Delete frame",    run: () => $("bDelF").onclick()},
+  onion:     {label: "Onion skin",      run: () => $("bOnion").onclick()},
+  mode:      {label: "Rigid / rubber",  run: () => $("bMode").onclick()},
+  ik:        {label: "IK / FK bones",   run: () => $("bIK").onclick()},
+  quick:     {label: "Quick menu",      run: () => openQuick(lastX, lastY)},
+  settings:  {label: "Settings",        run: () => openSettings()},
+  saveProj:  {label: "Save project",    run: () => saveProject()},
+  openProj:  {label: "Open project",    run: () => $("bOpenProj").onclick()}
+};
+const keyOf = id => settings.keys[id] || DEFAULT_KEYS[id];
+const KEYNAMES = {arrowleft: "\u2190", arrowright: "\u2192", arrowup: "\u2191", arrowdown: "\u2193", enter: "Enter", delete: "Del", escape: "Esc"};
+const pretty = c => c.split("+").map(p => KEYNAMES[p] || (p.length === 1 ? p.toUpperCase() : p.charAt(0).toUpperCase() + p.slice(1))).join("+");
+function combo(e){                                    // turns a key press into text like "ctrl+z"
+  if (!e.key) return "";
+  let k = e.key.toLowerCase();
+  if (["control", "shift", "alt", "meta", "dead"].includes(k)) return "";
+  if (k === " ") k = "space"; if (k === "=") k = "+";
+  const m = []; if (e.ctrlKey || e.metaKey) m.push("ctrl"); if (e.altKey) m.push("alt");
+  if (e.shiftKey && (k.length > 1 || /[a-z]/.test(k))) m.push("shift");
+  return m.concat(k).join("+");
+}
+const TITLE_IDS = {bUndo: "undo", bZin: "zoomIn", bZout: "zoomOut", bFit: "fit", bPlay: "play", bSet: "settings", bSaveProj: "saveProj", bOpenProj: "openProj"};
+function refreshTitles(){                             // tooltips always show the current shortcut
+  tools.forEach(b => b.title = ACTIONS[b.dataset.tool].label + " (" + pretty(keyOf(b.dataset.tool)) + ")");
+  for (const id in TITLE_IDS) $(id).title = ACTIONS[TITLE_IDS[id]].label + " (" + pretty(keyOf(TITLE_IDS[id])) + ")";
+}
+
+/* ---- Layouts ---- */
+function clampPalette(){                              // keeps the floating palette on screen
+  if (settings.layout !== "studio"){ $("tools").style.left = $("tools").style.top = ""; return; }
+  const t = $("tools"), a = $("app").getBoundingClientRect(), p = settings.palette;
+  if (!p){ t.style.left = t.style.top = ""; return; }
+  t.style.left = Math.max(0, Math.min(a.width - 50, p[0])) + "px"; t.style.top = Math.max(0, Math.min(a.height - 50, p[1])) + "px";
+}
+function applyLayout(){
+  for (const k in LAYOUTS) document.body.classList.toggle(k, settings.layout === k);
+  clampPalette();
+}
+addEventListener("resize", clampPalette);
+let gdrag = null; const grip = $("grip");             // drag the dots at the top of the Studio palette to move it
+grip.addEventListener("pointerdown", e => { const r = $("tools").getBoundingClientRect(); gdrag = {dx: e.clientX - r.left, dy: e.clientY - r.top}; grip.setPointerCapture(e.pointerId); });
+grip.addEventListener("pointermove", e => {
+  if (!gdrag) return;
+  const a = $("app").getBoundingClientRect(), t = $("tools");
+  settings.palette = [Math.max(0, Math.min(a.width - t.offsetWidth, e.clientX - a.left - gdrag.dx)), Math.max(0, Math.min(a.height - t.offsetHeight, e.clientY - a.top - gdrag.dy))];
+  clampPalette();
+});
+const dropGrip = () => { if (gdrag){ gdrag = null; saveSettings(); } };
+grip.addEventListener("pointerup", dropGrip); grip.addEventListener("pointercancel", dropGrip);
+
+/* ---- Quick menu: opens right under the mouse (right-click, long-press, or its shortcut) ---- */
+let lastX = innerWidth / 2, lastY = innerHeight / 2;
+addEventListener("pointermove", e => { lastX = e.clientX; lastY = e.clientY; }, {passive: true});
+function closeQuick(){ $("quick").hidden = true; }
+function openQuick(x, y){
+  const q = $("quick"); q.textContent = "";
+  for (const id of QUICK_ITEMS){
+    const b = document.createElement("button");
+    b.textContent = ACTIONS[id].label; b.title = pretty(keyOf(id));
+    if (id === tool || (id === "onion" && onion) || (id === "play" && playing)) b.className = "on";
+    b.onclick = () => { closeQuick(); ACTIONS[id].run(); };
+    q.appendChild(b);
+  }
+  q.hidden = false;
+  q.style.left = Math.max(4, Math.min(innerWidth - q.offsetWidth - 4, x - q.offsetWidth / 2)) + "px";
+  q.style.top = Math.max(4, Math.min(innerHeight - q.offsetHeight - 4, y - q.offsetHeight / 2)) + "px";
+}
+cv.addEventListener("contextmenu", e => { e.preventDefault(); if (!drag && !stroke) openQuick(e.clientX, e.clientY); });
+addEventListener("pointerdown", e => {                // a click outside the quick menu just closes it
+  if (!$("quick").hidden && !$("quick").contains(e.target)){ closeQuick(); e.stopPropagation(); }
+}, true);
+
+/* ---- Settings window ---- */
+let rebinding = null;                                 // the action waiting for a new key
+const setMsg = t => $("setMsg").textContent = t;
+function buildSettings(){
+  const T = $("setThemes"); T.textContent = "";
+  for (const k in THEMES){
+    const t = THEMES[k], b = document.createElement("button"); b.className = "thm" + (settings.theme === k ? " on" : "");
+    const chip = document.createElement("i");
+    if (t.bg) for (const c of [t.bg, t.panel, t.accent]){ const u = document.createElement("u"); u.style.background = c; chip.appendChild(u); }
+    else { const u = document.createElement("u"); u.style.background = "linear-gradient(90deg,#e9ebef 50%,#23262d 50%)"; chip.appendChild(u); }
+    const lab = document.createElement("span"); lab.textContent = t.label; b.append(chip, lab);
+    b.onclick = () => { settings.theme = k; saveSettings(); applyTheme(); buildSettings(); };
+    T.appendChild(b);
+  }
+  const L = $("setLayouts"); L.textContent = "";
+  for (const k in LAYOUTS){
+    const b = document.createElement("button"); b.textContent = LAYOUTS[k]; b.className = settings.layout === k ? "on" : "";
+    b.onclick = () => { settings.layout = k; saveSettings(); applyLayout(); buildSettings(); };
+    L.appendChild(b);
+  }
+  const K = $("setKeys"); K.textContent = "";
+  for (const id in ACTIONS){
+    const row = document.createElement("div"); row.className = "krow";
+    const lab = document.createElement("span"); lab.textContent = ACTIONS[id].label;
+    const b = document.createElement("button");
+    b.textContent = rebinding === id ? "Press a key..." : pretty(keyOf(id)); b.className = rebinding === id ? "on" : "";
+    b.onclick = () => { rebinding = id; setMsg("Press the new key. Esc cancels."); buildSettings(); };
+    row.append(lab, b); K.appendChild(row);
+  }
+}
+function openSettings(){ closeQuick(); rebinding = null; setMsg(""); buildSettings(); buildAbout(); showTab("gen"); $("settings").hidden = false; }
+function closeSettings(){ rebinding = null; $("settings").hidden = true; }
+$("bSet").onclick = openSettings; $("bSetClose").onclick = closeSettings;
+$("settings").onclick = e => { if (e.target === $("settings")) closeSettings(); };
+$("bKeyReset").onclick = () => { settings.keys = {}; rebinding = null; saveSettings(); refreshTitles(); buildSettings(); setMsg("Shortcuts reset."); };
+
+/* ---- Keyboard: runs the action whose shortcut was pressed. Hold Space = pan (fixed). ---- */
+const REPEATABLE = ["prevFrame", "nextFrame", "zoomIn", "zoomOut", "undo"];   // these may repeat while the key is held
+addEventListener("keydown", e => {
+  const c = combo(e);
+  if (rebinding){                                     // the Settings window is waiting for a new key
+    e.preventDefault(); e.stopPropagation(); if (!c) return;
+    if (c === "escape") setMsg("Cancelled.");
+    else if (c === "space") { setMsg("Space is reserved for moving the view."); return; }
+    else {
+      const other = Object.keys(ACTIONS).find(id => id !== rebinding && keyOf(id) === c);
+      if (other){ setMsg(pretty(c) + " is already used by " + ACTIONS[other].label + "."); return; }
+      settings.keys[rebinding] = c; saveSettings(); refreshTitles(); setMsg("Saved.");
+    }
+    rebinding = null; buildSettings(); return;
+  }
+  if (!$("settings").hidden){ if (c === "escape") closeSettings(); return; }
+  if (!$("builder").hidden){
+    if (c === "escape") closeBuilder();
+    else if (e.target.tagName !== "INPUT" || e.target.type !== "text"){
+      if (c === "delete" || c === "backspace"){ e.preventDefault(); fbDelete(); }
+      else if (c === "ctrl+z"){ e.preventDefault(); fbUndo(); } }
+    return; }
+  if (c === "escape" && !$("quick").hidden){ closeQuick(); return; }
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.code === "Space"){ e.preventDefault(); spaceDown = true; return; }
+  const id = Object.keys(ACTIONS).find(i => keyOf(i) === c);
+  if (!id || (e.repeat && !REPEATABLE.includes(id))) return;
+  e.preventDefault(); ACTIONS[id].run();
+});
+addEventListener("keyup", e => { if (e.code === "Space") spaceDown = false; });
+/* ---- About page ---- */
+function showTab(t){
+  $("paneGen").hidden = t !== "gen"; $("paneAbout").hidden = t !== "about";
+  $("tabGen").className = t === "gen" ? "on" : ""; $("tabAbout").className = t === "about" ? "on" : "";
+}
+$("tabGen").onclick = () => showTab("gen"); $("tabAbout").onclick = () => showTab("about");
+function buildAbout(){                                // filled from the ABOUT_ constants at the top of the file
+  const A = $("paneAbout"); A.textContent = "";
+  const add = (tag, text, cls) => { const el = document.createElement(tag); el.textContent = text; if (cls) el.className = cls; A.appendChild(el); };
+  add("h4", APP_TITLE); add("p", "Version " + ABOUT_VERSION); add("p", "Creator: " + ABOUT_NAME);
+  if (ABOUT_TEXT) add("p", ABOUT_TEXT, "hint");
+  if (ABOUT_CONTACTS.length) add("h4", "Contact");
+  for (const c of ABOUT_CONTACTS){
+    const row = document.createElement("div"); row.className = "krow";
+    const lab = document.createElement("span"); lab.textContent = c.label; row.appendChild(lab);
+    if (/^(https?:|mailto:|tel:)/i.test(c.url)){        // only safe link types become clickable
+      const a = document.createElement("a"); a.href = c.url; a.textContent = c.url.replace(/^(mailto:|tel:|https?:\/\/)/i, "");
+      a.target = "_blank"; a.rel = "noopener"; a.style.color = "var(--accent)"; row.appendChild(a);
+    } else { const s = document.createElement("span"); s.textContent = c.url; row.appendChild(s); }
+    A.appendChild(row);
+  }
+}
+
+/* ---- Custom figures ----
+   A figure file (.json) is: {name, joints: [{id, parent, x, y, w, r, c, fl, k}]}.
+   c = bone color ("" = pen/figure color), fl = circle fill color ("" = background), k = look: 0 line, 1 spike (hair, in front), 2 lock (hair, behind).
+   Optional "parts": details stuck onto a bone (j = bone's end dot) that move with it: {j, k, x, y, x2, sw, asp, a, w, c, fl, z, m, cap, p}.
+   k = pen | circle | oval | rect | tri | star | diamond | seg | band.  x,x2 = place along the bone (0 = start dot, 1 = end dot), y = sideways in pixels.
+   Each dot has a parent dot (the first one, the root, has parent null), a position, a bone thickness (w)
+   and an optional circle size (r, 0 = none). Hands/feet-like ends (a last dot on a 2-bone chain) bend like the built-in figure. */
+const CUSTOM_DEFS = {};                               // key -> figure definition
+let customCount = 0;
+function cleanDef(d){                                 // checks a definition from a file; returns a clean copy or null
+  try {
+    if (!d || !Array.isArray(d.joints) || d.joints.length < 2 || d.joints.length > MAX_JOINTS) return null;
+    const num = (v, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(+v) ? +v : lo));
+    const col = v => /^#[0-9a-f]{6}$/i.test(v) ? String(v).toLowerCase() : "";
+    const js = d.joints.map(j => ({id: String(j.id), parent: j.parent === null ? null : String(j.parent),
+      x: num(j.x, -3000, 3000), y: num(j.y, -3000, 3000), w: num(j.w, 1, 60), r: num(j.r, 0, 300),
+      c: col(j.c), fl: col(j.fl), k: [1, 2].includes(+j.k) ? +j.k : 0}));
+    const ids = new Set(js.map(j => j.id));
+    if (ids.size !== js.length || js.some(j => !/^\w{1,8}$/.test(j.id))) return null;
+    const roots = js.filter(j => j.parent === null);
+    if (roots.length !== 1 || js.some(j => j.parent !== null && !ids.has(j.parent))) return null;
+    const seen = new Set([roots[0].id]); let grew = true;   // every dot must connect back to the root
+    while (grew){ grew = false; for (const j of js) if (!seen.has(j.id) && seen.has(j.parent)){ seen.add(j.id); grew = true; } }
+    if (seen.size !== js.length) return null;
+    const KINDS = ["pen", "circle", "oval", "rect", "tri", "star", "diamond", "seg", "band"];
+    const parts = (Array.isArray(d.parts) ? d.parts : []).slice(0, MAX_PARTS).map(q => {
+      if (!q || !ids.has(String(q.j)) || !KINDS.includes(q.k)) return null;
+      const o = {j: String(q.j), k: q.k, x: num(q.x, -20, 20), y: num(q.y, -500, 500), x2: num(q.x2, -20, 20), sw: num(q.sw, 1, 400), asp: num(q.asp, .1, 5),
+        a: num(q.a, -360, 360), w: num(q.w, 0, 80), z: q.z ? 1 : 0, m: q.m ? 1 : 0, cap: q.cap ? 1 : 0, c: col(q.c), fl: col(q.fl)};
+      if (q.k === "pen"){ o.p = (Array.isArray(q.p) ? q.p : []).slice(0, 600).map(v => num(v, -500, 500)); if (o.p.length % 2) o.p.pop(); if (o.p.length < 2) return null; }
+      return o;
+    }).filter(Boolean);
+    return {name: String(d.name || "Custom figure").slice(0, 30), joints: js, parts};
+  } catch (e) { return null; }
+}
+function makeRig(def){
+  const P = {}, parent = {}, w = {}, kd = {}, cl = {}, cr = {};
+  for (const j of def.joints){ P[j.id] = [j.x, j.y]; parent[j.id] = j.parent; w[j.id] = j.w; kd[j.id] = j.k || 0; cl[j.id] = j.c || ""; cr[j.id] = j.r || 0; }
+  const names = def.joints.map(j => j.id), kids = kidsOf(parent), len = {}, bend = {}, ends = [], groups = {}, start = {}, circles = [], spikes = [];
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const n of names){ x0 = Math.min(x0, P[n][0]); x1 = Math.max(x1, P[n][0]); y0 = Math.min(y0, P[n][1]); y1 = Math.max(y1, P[n][1]); }
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  for (const n of names){
+    start[n] = [P[n][0] - cx, P[n][1] - cy];
+    const p = parent[n];
+    if (p !== null){ len[n] = Math.hypot(P[n][0] - P[p][0], P[n][1] - P[p][1]); if (!kd[n]){ const key = w[n] + "|" + cl[n]; (groups[key] = groups[key] || {w: w[n], c: cl[n], segs: []}).segs.push([n, p]); } else spikes.push([n, p, w[n], kd[n], cl[n]]); }
+  }
+  for (const j of def.joints) if (j.r > 0) circles.push([j.id, j.r, j.w, j.c || "", j.fl || ""]);
+  for (const n of names){                             // last dot of a 2-bone chain = bends like a hand or foot
+    const m = parent[n], r = m !== null ? parent[m] : null;
+    if (r !== null && !kids[n].length && kids[m].length === 1 && len[m] > 1 && len[n] > 1){
+      ends.push(n);
+      bend[n] = Math.sign((P[m][0]-P[r][0])*(P[n][1]-P[r][1]) - (P[m][1]-P[r][1])*(P[n][0]-P[r][0])) || 1;
+    }
+  }
+  const parts = (def.parts || []).filter(q => P[q.j]);
+  return {names, parent, kids, ends, len, bend, start, groups, circles, spikes, cr, pb: parts.filter(q => !q.z), pf: parts.filter(q => q.z), color: CUSTOM_COLOR};
+}
+function addCustom(def, remember = true){             // registers a figure: dropdown + (optionally) the saved library
+  const key = "c" + (++customCount);
+  RIGS[key] = makeRig(def); CUSTOM_DEFS[key] = def;
+  const o = document.createElement("option"); o.value = key; o.textContent = def.name; $("charSel").appendChild(o);
+  if (remember){ settings.figures.push(def); if (settings.figures.length > 40) settings.figures.shift(); saveSettings(); }
+  return key;
+}
+for (const d of settings.figures || []){ const c = cleanDef(d); if (c) addCustom(c, false); }
+settings.figures = settings.figures.map(cleanDef).filter(Boolean);
+
+/* ---- Import / save files ---- */
+$("bImpFig").onclick = () => $("figIn").click();
+$("figIn").onchange = async e => {
+  let n = 0, last = null;
+  for (const f of e.target.files){
+    try { if (f.size > 300000) continue; const d = cleanDef(JSON.parse(await f.text())); if (d){ last = addCustom(d); n++; } } catch (err) {}
+  }
+  e.target.value = "";
+  if (!last){ say("Could not read that figure file."); return; }
+  $("charSel").value = last;
+  if (n === 1) $("bAddP").onclick();                  // one figure: place it on the canvas right away
+  say("Imported " + n + " figure" + (n > 1 ? "s. Choose one in the list and press Add fig." : "."));
+};
+
+/* ---- Figure builder (its own screen with its own small canvas) ----
+   Draw: drag out of a dot to pull a new bone, or tap empty space.  Move: drag dots (attached bones follow).
+   Mirror keeps the left and right sides matching.  Spike / Lock + the Hair presets make anime hair. */
+const fbCv = $("fbCv"), fbx = fbCv.getContext("2d");
+let fb = null, fbZ = 1.5, fbPan = [0, 0], fbMode = "draw", fbDrag = null, fbSliding = false, fbTarget = "line", fbPinch = null;
+const fbPts = new Map(), fbBrush = {k: 0, c: ""};
+const fbSay = t => $("fbMsg").textContent = t;
+const SWATCHES = ["#1d2330", "#ffffff", "#8a8f9c", "#6b3f1d", "#f2c9a0", "#ffd21f", "#ff9a1f", "#e5322d", "#ff7ab8", "#8a4fff", "#2f6df6", "#2bc4d9", "#2fb35a"];
+const HAIR = [   // a = angle from straight up (clockwise), l = length beyond the head edge (x head size), w = base width (x head size), k = 1 spike / 2 lock, par = chained to an earlier piece
+  {name: "Spiky", col: "#1d2330", k: 1, pieces: [[-80, .45, .26], [-55, .8, .3], [-28, 1.1, .32], [0, 1.4, .34], [28, 1.1, .32], [55, .8, .3], [80, .45, .26]]},
+  {name: "Wild Tufts", col: "#ffd21f", k: 1, pieces: [[-100, .45, .2], [-78, .6, .2], [-54, .65, .2], [-28, .7, .2], [0, .75, .2], [28, .7, .2], [54, .65, .2], [78, .6, .2], [100, .45, .2]]},
+  {name: "Swept Quills", col: "#2f6df6", k: 1, pieces: [[-112, 1.1, .34], [-88, 1.4, .36], [-62, 1.2, .34], [-30, .7, .3], [10, .5, .26]]},
+  {name: "Mohawk", col: "#e5322d", k: 1, pieces: [[-34, .6, .2], [-17, .8, .2], [0, .9, .2], [17, .8, .2], [34, .6, .2]]},
+  {name: "Long", col: "#6b3f1d", k: 2, pieces: [[-100, .9, .45], [-128, 1.7, .5], [-158, 2.3, .5], [100, .9, .45], [128, 1.7, .5], [158, 2.3, .5]]},
+  {name: "Ponytail", col: "#6b3f1d", k: 2, pieces: [[-112, .9, .3], [-160, 1.5, .4, 0]]},
+  {name: "Cat ears", col: "#1d2330", k: 1, pieces: [[-38, .65, .4], [38, .65, .4]]},
+  {name: "Horns", col: "#e5322d", k: 1, pieces: [[-48, .9, .28], [48, .9, .28]]}
+];
+function fbReset(){ fb = {joints: {"0": {p: null, x: 0, y: 0, w: 5, r: 0, c: "", fl: "", k: 0}}, next: 1, sel: "0", hist: [], twin: {}}; fbPan = [0, 0]; }
+function fbSnap(){ fb.hist.push(JSON.stringify([fb.joints, fb.next, fb.twin])); if (fb.hist.length > 60) fb.hist.shift(); }
+function fbRawDef(){ return {name: "", joints: Object.keys(fb.joints).map(id => { const j = fb.joints[id]; return {id, parent: j.p, x: j.x, y: j.y, w: j.w, r: j.r, c: j.c, fl: j.fl, k: j.k}; })}; }
+function fbToDef(){
+  const d = fbRawDef(); d.name = $("fbName").value.trim() || "Custom figure";
+  d.joints.forEach(j => { j.x = Math.round(j.x * 10) / 10; j.y = Math.round(j.y * 10) / 10; }); return d;
+}
+function fbPair(){                                    // links left/right partners so Mirror works on loaded figures too
+  fb.twin = {}; const ids = Object.keys(fb.joints);
+  for (const a of ids){ if (fb.twin[a]) continue; const A = fb.joints[a]; if (Math.abs(A.x) < 3) continue;
+    const b = ids.find(i => i !== a && !fb.twin[i] && Math.abs(fb.joints[i].x + A.x) < 1.5 && Math.abs(fb.joints[i].y - A.y) < 1.5);
+    if (b){ fb.twin[a] = b; fb.twin[b] = a; } }
+}
+function fbLoad(def){
+  fbReset(); fb.joints = {}; let top = 0;
+  for (const j of def.joints){ fb.joints[j.id] = {p: j.parent, x: j.x, y: j.y, w: j.w, r: j.r, c: j.c || "", fl: j.fl || "", k: j.k || 0}; if (/^\d+$/.test(j.id)) top = Math.max(top, +j.id); }
+  fb.next = top + 1; fb.sel = def.joints.find(j => j.parent === null).id; $("fbName").value = def.name; fbPair();
+}
+const fbBranch = id => { const s = new Set([id]); let g = true; while (g){ g = false; for (const i in fb.joints) if (!s.has(i) && s.has(fb.joints[i].p)){ s.add(i); g = true; } } return s; };
+function fbTargets(){ const t = [fb.sel], tw = fb.twin[fb.sel]; if ($("fbMir").checked && tw && fb.joints[tw]) t.push(tw); return t; }
+const fbEdit = fn => { for (const id of fbTargets()) fn(fb.joints[id]); };
+function fbSync(){                                    // controls show the selected dot's values
+  const j = fb.joints[fb.sel]; $("fbW").value = j.w; $("fbCirc").checked = j.r > 0; if (j.r > 0) $("fbR").value = j.r;
+  for (let k = 0; k < 3; k++) $("fbK" + k).className = "tog" + (j.p !== null && j.k === k ? " on" : "");
+  $("fbCol").value = fbTarget === "fill" ? (j.fl || "#ffffff") : (j.c || CUSTOM_COLOR);
+}
+function fbAddBone(parent, x, y){                     // adds a bone (and its mirror twin when Mirror is on); returns the new dot's id
+  const id = String(fb.next++), P = fb.joints[parent];
+  fb.joints[id] = {p: parent, x, y, w: +$("fbW").value, r: 0, c: fbBrush.c, fl: "", k: fbBrush.k};
+  const tp = fb.twin[parent] || (Math.abs(P.x) < 3 ? parent : null);
+  if ($("fbMir").checked && tp !== null && fb.joints[tp] && Math.abs(x) > 3 && Object.keys(fb.joints).length < MAX_JOINTS){
+    const t = String(fb.next++); fb.joints[t] = {p: tp, x: -x, y, w: +$("fbW").value, r: 0, c: fbBrush.c, fl: "", k: fbBrush.k}; fb.twin[id] = t; fb.twin[t] = id;
+  }
+  return id;
+}
+function fbMoveDot(id, dx, dy){
+  const kids = $("fbKids").checked, A = kids ? fbBranch(id) : new Set([id]);
+  for (const i of A){ fb.joints[i].x += dx; fb.joints[i].y += dy; }
+  const t = fb.twin[id];
+  if ($("fbMir").checked && t && fb.joints[t] && !A.has(t)){
+    for (const i of (kids ? fbBranch(t) : [t])){ if (A.has(i)) continue; fb.joints[i].x -= dx; fb.joints[i].y += dy; }
+  }
+}
+function fbDraw(){
+  const d = Math.min(devicePixelRatio || 1, 2), W = fbCv.width / d, H = fbCv.height / d, J = fb.joints;
+  fbx.setTransform(1, 0, 0, 1, 0, 0); fbx.fillStyle = CANVAS_BG; fbx.fillRect(0, 0, fbCv.width, fbCv.height);
+  fbx.setTransform(d * fbZ, 0, 0, d * fbZ, (W / 2 + fbPan[0]) * d, (H / 2 + fbPan[1]) * d);
+  const R = 4000;
+  fbx.strokeStyle = "#d8dbe2"; fbx.lineWidth = 1 / fbZ; fbx.beginPath(); fbx.moveTo(-R, 0); fbx.lineTo(R, 0); fbx.stroke();
+  fbx.strokeStyle = $("fbMir").checked ? "#7da2ff" : "#d8dbe2"; fbx.setLineDash($("fbMir").checked ? [6 / fbZ, 5 / fbZ] : []);
+  fbx.beginPath(); fbx.moveTo(0, -R); fbx.lineTo(0, R); fbx.stroke(); fbx.setLineDash([]);
+  const pos = {}; for (const id in J) pos[id] = [J[id].x, J[id].y];
+  paintCustom(fbx, pos, makeRig(fbRawDef()), CUSTOM_COLOR);
+  fbx.lineCap = "round";
+  const s = J[fb.sel];
+  if (s && s.p !== null){ fbx.strokeStyle = "rgba(47,109,246,.35)"; fbx.lineWidth = s.w + 8; fbx.beginPath(); fbx.moveTo(J[s.p].x, J[s.p].y); fbx.lineTo(s.x, s.y); fbx.stroke(); }
+  const hr = 7 / fbZ; fbx.lineWidth = hr / 3; fbx.strokeStyle = "#fff";
+  for (const id in J){ fbx.fillStyle = id === fb.sel ? "#2f6df6" : "#9aa3b5"; fbx.beginPath(); fbx.arc(J[id].x, J[id].y, hr, 0, 6.2832); fbx.fill(); fbx.stroke(); }
+}
+function fbResize(){
+  const d = Math.min(devicePixelRatio || 1, 2), r = $("fbWrap").getBoundingClientRect();
+  fbCv.width = Math.max(1, Math.round(r.width * d)); fbCv.height = Math.max(1, Math.round(r.height * d)); if (fb) fbDraw();
+}
+addEventListener("resize", () => { if (!$("builder").hidden) fbResize(); });
+const fbPos = e => { const r = fbCv.getBoundingClientRect(); return [(e.clientX - r.left - r.width / 2 - fbPan[0]) / fbZ, (e.clientY - r.top - r.height / 2 - fbPan[1]) / fbZ]; };
+function fbHit(p){
+  let best = null, bd = (26 / fbZ) ** 2;
+  for (const id in fb.joints){ const d = (fb.joints[id].x - p[0]) ** 2 + (fb.joints[id].y - p[1]) ** 2; if (d < bd){ bd = d; best = id; } }
+  return best;
+}
+const fbFull = () => Object.keys(fb.joints).length >= MAX_JOINTS;
+function fbPinchStart(){ const [a, b] = [...fbPts.values()]; fbPinch = {d: Math.hypot(a[0] - b[0], a[1] - b[1]) || 1, z: fbZ, mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2, px: fbPan[0], py: fbPan[1]}; }
+function fbPinchMove(){
+  const [a, b] = [...fbPts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]) || 1;
+  fbZ = Math.min(5, Math.max(.3, fbPinch.z * d / fbPinch.d)); fbPan = [fbPinch.px + (a[0] + b[0]) / 2 - fbPinch.mx, fbPinch.py + (a[1] + b[1]) / 2 - fbPinch.my]; fbDraw();
+}
+fbCv.addEventListener("pointerdown", e => {
+  fbPts.set(e.pointerId, [e.clientX, e.clientY]); try { fbCv.setPointerCapture(e.pointerId); } catch (x) {}
+  if (fbPts.size === 2){ fbDrag = null; fbPinchStart(); return; }
+  if (fbPts.size > 2) return;
+  const p = fbPos(e), hit = fbHit(p), panStart = {t: "pan", sx: e.clientX, sy: e.clientY, px: fbPan[0], py: fbPan[1]};
+  if (fbMode === "pan"){ fbDrag = panStart; return; }
+  if (hit){
+    fb.sel = hit; fbSync();
+    if (fbMode === "move"){ fbSnap(); fbDrag = {t: "move", id: hit, last: p}; }
+    else fbDrag = {t: "pull", from: hit, sx: e.clientX, sy: e.clientY};
+  } else if (fbMode === "draw"){
+    if (fbFull()){ fbSay("Dot limit reached (" + MAX_JOINTS + ")."); return; }
+    fbSnap(); const id = fbAddBone(fb.sel, p[0], p[1]); fb.sel = id; fbSync(); fbDrag = {t: "move", id, last: p};
+  } else fbDrag = panStart;                           // Move mode: dragging empty space slides the view
+  fbDraw();
+});
+fbCv.addEventListener("pointermove", e => {
+  if (fbPts.has(e.pointerId)) fbPts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (fbPts.size === 2 && fbPinch){ fbPinchMove(); return; }
+  if (!fbDrag) return;
+  if (fbDrag.t === "pan"){ fbPan = [fbDrag.px + e.clientX - fbDrag.sx, fbDrag.py + e.clientY - fbDrag.sy]; fbDraw(); return; }
+  const p = fbPos(e);
+  if (fbDrag.t === "pull"){
+    if (Math.hypot(e.clientX - fbDrag.sx, e.clientY - fbDrag.sy) < 8) return;
+    if (fbFull()){ fbSay("Dot limit reached (" + MAX_JOINTS + ")."); fbDrag = null; return; }
+    fbSnap(); const id = fbAddBone(fbDrag.from, p[0], p[1]); fb.sel = id; fbSync(); fbDrag = {t: "move", id, last: p}; fbDraw(); return;
+  }
+  fbMoveDot(fbDrag.id, p[0] - fbDrag.last[0], p[1] - fbDrag.last[1]); fbDrag.last = p; fbDraw();
+});
+const fbEnd = e => { fbPts.delete(e.pointerId); if (fbPts.size < 2) fbPinch = null; if (!fbPts.size) fbDrag = null; };
+fbCv.addEventListener("pointerup", fbEnd); fbCv.addEventListener("pointercancel", fbEnd);
+fbCv.addEventListener("wheel", e => { e.preventDefault(); fbZ = Math.min(5, Math.max(.3, fbZ * (e.deltaY < 0 ? 1.1 : 1 / 1.1))); fbDraw(); }, {passive: false});
+
+function fbSetMode(m){
+  fbMode = m; $("fbAdd").className = "tog" + (m === "draw" ? " on" : ""); $("fbMove").className = "tog" + (m === "move" ? " on" : ""); $("fbPanBtn").className = "tog" + (m === "pan" ? " on" : "");
+  fbCv.className = m === "pan" ? "pan" : "";
+  fbSay(m === "draw" ? "Draw: drag out of a dot to pull a new bone, or tap empty space. Tap a dot to select it." :
+        m === "move" ? "Move: drag any dot. Attached bones follow (untick \"Move attached\" to move one dot alone)." : "Pan: drag to slide the view. Pinch or scroll to zoom.");
+}
+$("fbAdd").onclick = () => fbSetMode("draw"); $("fbMove").onclick = () => fbSetMode("move"); $("fbPanBtn").onclick = () => fbSetMode("pan");
+function fbDelete(){
+  if (fb.sel === "0"){ fbSay("The first (root) dot can't be deleted."); return; }
+  fbSnap(); const gone = fbBranch(fb.sel), t = fb.twin[fb.sel];
+  if ($("fbMir").checked && t && fb.joints[t]) for (const i of fbBranch(t)) gone.add(i);
+  const next = fb.joints[fb.sel].p; for (const id of gone) delete fb.joints[id];
+  for (const k in fb.twin) if (!fb.joints[k] || !fb.joints[fb.twin[k]]) delete fb.twin[k];
+  fb.sel = fb.joints[next] ? next : "0"; fbSync(); fbDraw();
+}
+function fbUndo(){
+  if (!fb.hist.length) return; const s = JSON.parse(fb.hist.pop()); fb.joints = s[0]; fb.next = s[1]; fb.twin = s[2] || {};
+  if (!fb.joints[fb.sel]) fb.sel = "0"; fbSync(); fbDraw();
+}
+$("fbDel").onclick = fbDelete; $("fbUndo").onclick = fbUndo;
+$("fbNew").onclick = () => { fbReset(); $("fbName").value = ""; fbSync(); fbDraw(); fbSay("Fresh start. Drag out of the blue dot to pull your first bone."); };
+$("fbMan").onclick = () => {                          // ready-made stick man to decorate
+  fbSnap(); const h = fb.hist; fbReset(); fb.hist = h;
+  const add = (p, x, y, w, r) => { const id = String(fb.next++); fb.joints[id] = {p, x, y, w, r, c: "", fl: "", k: 0}; return id; };
+  const neck = add("0", 0, -46, 5, 0); add(neck, 0, -62, 5, 14);
+  for (const s of [-1, 1]){ const el = add(neck, s * 20, -32, 5, 0); add(el, s * 27, -12, 5, 0); const kn = add("0", s * 10, 26, 5, 0); add(kn, s * 12, 54, 5, 0); }
+  fb.sel = "0"; fbPair(); fbSync(); fbDraw(); fbSay("Stick man ready. Select the head, pick a Hair preset, then tweak colors.");
+};
+$("fbZin").onclick = () => { fbZ = Math.min(5, fbZ * 1.25); fbDraw(); }; $("fbZout").onclick = () => { fbZ = Math.max(.3, fbZ / 1.25); fbDraw(); };
+$("fbMir").onchange = () => fbDraw();
+
+/* ---- Look controls ---- */
+const fbOnce = () => { if (!fbSliding){ fbSnap(); fbSliding = true; } };
+const fbDone = () => { fbSliding = false; };
+$("fbW").oninput = () => { fbOnce(); fbEdit(j => j.w = +$("fbW").value); fbDraw(); };
+$("fbR").oninput = () => { if (!$("fbCirc").checked) return; fbOnce(); fbEdit(j => j.r = +$("fbR").value); fbDraw(); };
+$("fbW").onchange = $("fbR").onchange = fbDone;
+$("fbCirc").onchange = () => { fbSnap(); fbEdit(j => j.r = $("fbCirc").checked ? +$("fbR").value : 0); fbDraw(); };
+for (let k = 0; k < 3; k++) $("fbK" + k).onclick = () => {
+  fbBrush.k = k; if (fb.joints[fb.sel].p === null){ fbSay("New bones will be drawn as " + ["lines", "spikes", "locks"][k] + "."); fbSync(); return; }
+  fbSnap(); fbEdit(j => { if (j.p !== null) j.k = k; }); fbSync(); fbDraw();
+  fbSay(k === 1 ? "Spike: pointed hair shape, drawn in front. Drag its tip to bend it." : k === 2 ? "Lock: leaf-shaped hair, drawn behind the head." : "Line: a plain stick.");
+};
+function fbApplyColor(hex){
+  let ids = new Set(fbTargets());
+  if ($("fbBr").checked) for (const id of [...ids]) for (const i of fbBranch(id)) ids.add(i);
+  for (const id of ids){ const j = fb.joints[id]; if (fbTarget === "fill"){ if (j.r > 0 || !$("fbBr").checked) j.fl = hex; } else j.c = hex; }
+  if (fbTarget === "line") fbBrush.c = hex;
+  if (fbTarget === "fill" && fb.joints[fb.sel].r === 0) fbSay("Circle fill only shows on a dot with Circle ticked.");
+  fbDraw();
+}
+$("fbSw").innerHTML = SWATCHES.map(c => '<button class="sw" data-c="' + c + '" style="background:' + c + '" aria-label="Color ' + c + '"></button>').join("");
+$("fbSw").onclick = e => { const b = e.target.closest(".sw"); if (!b) return; fbSnap(); $("fbCol").value = b.dataset.c; fbApplyColor(b.dataset.c); };
+$("fbCol").oninput = () => { fbOnce(); fbApplyColor($("fbCol").value); }; $("fbCol").onchange = fbDone;
+$("fbAuto").onclick = () => { fbSnap(); fbApplyColor(""); $("fbCol").value = CUSTOM_COLOR; fbSay("Back to automatic color (follows the pen color in the animator)."); };
+$("fbTL").onclick = () => { fbTarget = "line"; $("fbTL").className = "tog on"; $("fbTF").className = "tog"; fbSync(); };
+$("fbTF").onclick = () => { fbTarget = "fill"; $("fbTF").className = "tog on"; $("fbTL").className = "tog"; fbSync(); };
+
+/* ---- Hair presets ---- */
+$("fbHairBtns").innerHTML = HAIR.map((h, i) => '<button class="tog" data-i="' + i + '">' + h.name + '</button>').join("");
+function fbHead(){                                    // the selected circle, otherwise the highest circle
+  const J = fb.joints; if (J[fb.sel].r > 0) return fb.sel;
+  let best = null; for (const id in J) if (J[id].r > 0 && (best === null || J[id].y < J[best].y)) best = id; return best;
+}
+function fbClearHair(head){
+  const gone = new Set(); for (const id in fb.joints) if (fb.joints[id].p === head && fb.joints[id].k > 0) for (const i of fbBranch(id)) gone.add(i);
+  for (const id of gone) delete fb.joints[id];
+  for (const k in fb.twin) if (!fb.joints[k] || !fb.joints[fb.twin[k]]) delete fb.twin[k];
+  if (!fb.joints[fb.sel]) fb.sel = head;
+}
+$("fbHairBtns").onclick = e => {
+  const b = e.target.closest("button"); if (!b) return; const H = HAIR[+b.dataset.i], head = fbHead();
+  if (head === null){ fbSay("Give the figure a head first: tick Circle on a dot (or press Stick man)."); return; }
+  fbSnap(); fbClearHair(head);
+  if (Object.keys(fb.joints).length + H.pieces.length > MAX_JOINTS){ fbSay("Not enough dots left for this style (limit " + MAX_JOINTS + ")."); fbUndo(); return; }
+  const hd = fb.joints[head], r = hd.r, col = H.col, made = [];
+  $("fbHair").value = col; fbBrush.k = H.k;
+  for (const [a, l, w, par] of H.pieces){
+    const rad = a * Math.PI / 180, ux = Math.sin(rad), uy = -Math.cos(rad), id = String(fb.next++);
+    const from = par === undefined ? head : made[par], o = par === undefined ? [hd.x, hd.y] : [fb.joints[from].x, fb.joints[from].y];
+    const dist = par === undefined ? r * (1 + l) : r * l;
+    fb.joints[id] = {p: from, x: o[0] + ux * dist, y: o[1] + uy * dist, w: Math.max(1, Math.round(w * r)), r: 0, c: col, fl: "", k: H.k}; made.push(id);
+  }
+  if (hd.fl === "") hd.fl = "#f2c9a0";               // give the face a skin tone so the hair reads clearly
+  fb.sel = head; fbSync(); fbDraw(); fbSay(H.name + " hair added. Drag a tip to reshape it, or change Hair color.");
+};
+$("fbHair").oninput = () => { fbOnce(); const v = $("fbHair").value; for (const id in fb.joints) if (fb.joints[id].k > 0) fb.joints[id].c = v; fbDraw(); };
+$("fbHair").onchange = fbDone;
+$("fbHairClr").onclick = () => { const head = fbHead(); if (head === null) return; fbSnap(); fbClearHair(head); fbSync(); fbDraw(); };
+
+function openBuilder(){                               // if a custom figure is chosen in the list, it opens for editing as a copy
+  const key = $("charSel").value; fbReset(); fbZ = 1.5;
+  if (CUSTOM_DEFS[key]) fbLoad(CUSTOM_DEFS[key]); else $("fbName").value = "";
+  $("builder").hidden = false; fbResize(); fbSync(); fbSetMode("draw");
+}
+function closeBuilder(){ $("builder").hidden = true; }
+$("bBuild").onclick = openBuilder; $("fbClose").onclick = closeBuilder;
+$("fbUse").onclick = () => {                          // saved as a NEW figure in the list, so figures already in your animation stay unchanged
+  const def = cleanDef(fbToDef());
+  if (!def){ fbSay("Add at least one bone first."); return; }
+  const key = addCustom(def); closeBuilder(); $("charSel").value = key; $("bAddP").onclick(); say("Figure saved to the list and placed on the canvas.");
+};
+$("fbFile").onclick = () => {
+  const def = cleanDef(fbToDef());
+  if (!def){ fbSay("Add at least one bone first."); return; }
+  saveFile(def.name.replace(/[^\w\-]+/g, "_") + ".json", new Blob([JSON.stringify({format: "stick-figure", version: 2, ...def})], {type: "application/json"}));
+};
+
+/* ---- Projects: save the whole animation (frames, drawings, figures, speed) to one file and open it again later ---- */
+function saveProject(){
+  if (playing || busy) return;
+  const figs = {};
+  for (const fr of frames) for (const f of fr) if (CUSTOM_DEFS[f.t]) figs[f.t] = CUSTOM_DEFS[f.t];   // custom figures travel inside the file
+  const data = {format: "stick-animator-project", version: 1, fps, onion, rigid, ik, cur, figures: figs, frames, ink, refT: refT.some(v => v != null) ? refT : undefined};
+  saveFile(EXPORT_NAME + "-project.json", new Blob([JSON.stringify(data)], {type: "application/json"}));
+  say("Project saved (" + frames.length + " frame" + (frames.length > 1 ? "s" : "") + ").");
+}
+const okNum = v => typeof v === "number" && Number.isFinite(v);
+const okPt = p => Array.isArray(p) && p.length === 2 && okNum(p[0]) && okNum(p[1]);
+const okHex = v => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v);
+function okInk(k){                                    // keeps only well-formed drawing items from a file
+  if (!k || typeof k !== "object") return false;
+  if (k.fx) return okNum(k.shake) && okNum(k.zoom);
+  if (k.fill) return okNum(k.x) && okNum(k.y) && okNum(k.t) && okHex(k.c);
+  if (k.burst) return ["rays", "star", "speed", "slash"].includes(k.burst) && [k.x, k.y, k.x2, k.y2, k.w, k.n, k.seed].every(okNum) && k.n >= 1 && k.n <= 200 && okHex(k.c);
+  return Array.isArray(k.p) && k.p.length >= 2 && k.p.length % 2 === 0 && k.p.every(okNum) && okNum(k.w) && okHex(k.c);
+}
+function loadProject(d){                              // throws if the file is not a usable project; nothing changes until it is fully checked
+  if (!d || d.format !== "stick-animator-project" || !Array.isArray(d.frames) || !d.frames.length || d.frames.length > 2000) throw new Error("bad");
+  const keymap = Object.create(null);
+  for (const k in (d.figures || {})){
+    const def = cleanDef(d.figures[k]); if (!def) continue;
+    const s = JSON.stringify(def), have = Object.keys(CUSTOM_DEFS).find(c => JSON.stringify(CUSTOM_DEFS[c]) === s);
+    keymap[k] = have || addCustom(def);               // reuse a figure already in the list, otherwise add it
+  }
+  const nf = d.frames.map(fr => {
+    if (!Array.isArray(fr) || !fr.length) throw new Error("bad");
+    return fr.map(f => {
+      let t = f && f.t;
+      if (typeof t === "string" && keymap[t]) t = keymap[t]; else if (!Object.hasOwn(CHARS, t)) t = "classic";
+      const names = (RIGS[t] || DEFAULT_RIG).names, j = {};
+      if (!f || !f.j) throw new Error("bad");
+      for (const n of names){ if (!okPt(f.j[n])) throw new Error("bad"); j[n] = [f.j[n][0], f.j[n][1]]; }
+      return {t, c: okHex(f.c) ? f.c : (RIGS[t] ? RIGS[t].color : CHARS[t].color), j};
+    });
+  });
+  if (nf.some(fr => fr.length !== nf[0].length)) throw new Error("bad");
+  const ni = nf.map((_, i) => (Array.isArray(d.ink && d.ink[i]) ? d.ink[i] : []).filter(okInk));
+  const nt = nf.map((_, i) => Array.isArray(d.refT) && okNum(d.refT[i]) && d.refT[i] >= 0 ? d.refT[i] : null);
+  snap();                                             // so Undo can bring your previous work back
+  frames = nf; ink = ni; refT = nt; sel = 0; cur = Math.min(Math.max(0, (+d.cur) | 0), nf.length - 1); fxSliding = false;
+  if (okNum(d.fps)){ fps = Math.min(24, Math.max(1, Math.round(d.fps))); $("fps").value = fps; $("fpsv").textContent = fps; }
+  if (typeof d.onion === "boolean" && d.onion !== onion) $("bOnion").onclick();
+  if (typeof d.rigid === "boolean" && d.rigid !== rigid) $("bMode").onclick();
+  if (typeof d.ik === "boolean" && d.ik !== ik) $("bIK").onclick();
+  refresh();
+}
+$("bSaveProj").onclick = saveProject;
+$("bOpenProj").onclick = () => { if (!playing && !busy) $("projIn").click(); };
+$("projIn").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  if (f.size > 80e6){ say("That file is too big to be a project."); return; }
+  try { loadProject(JSON.parse(await f.text())); say("Project opened: " + frames.length + " frame" + (frames.length > 1 ? "s" : "") + ". Undo brings back what you had before."); }
+  catch (err){ say("Could not open that file. Choose a project saved with Save project."); }
+};
+
+refreshTitles(); applyLayout(); applyTheme();
+
+buildStrip(); resize();
+</script>
+</body>
+</html>
